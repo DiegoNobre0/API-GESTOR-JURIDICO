@@ -1,0 +1,154 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// --------------------------------------
+// Usuários e Acessos
+// --------------------------------------
+
+model User {
+  id                  String   @id @default(auto()) @map("_id") @db.ObjectId
+  nome                String
+  email               String   @unique
+  senha               String
+  tipo                String   @default("cliente") 
+  cpf                 String?
+  telefone            String?
+  processosVinculados String[] @db.ObjectId 
+  
+  // --- ADICIONE ESTAS DUAS LINHAS ABAIXO ---
+  compromissos        Compromisso[]
+  tarefas             Tarefa[]
+  
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("usuarios")
+}
+
+// --------------------------------------
+// Gestão de Processos Jurídicos
+// --------------------------------------
+
+model Processo {
+  id                      String   @id @default(auto()) @map("_id") @db.ObjectId
+  clienteNome             String
+  descricaoObjeto         String
+  numeroInterno           String?
+  dataFechamentoContrato  String
+  numeroProcesso          String?
+  responsavel             String   // Leonardo, Alberto ou Jenifer
+  tipoHonorarios          String   // Iniciais, Êxito, Ambos
+  valorPrevistoIniciais   Float    @default(0)
+  valorPrevistoExito      Float    @default(0)
+  basePrevisao            String?
+  dataEstimadaRecebimento String?
+  custosPrevistos        Float    @default(0)
+  statusProtocolamento    String   @default("Pendente de Protocolamento")
+  statusGeral             String   @default("Contrato Fechado")
+  clienteCpf              String?
+  clienteEmail            String?
+  
+  // Financeiro Consolidado
+  totalRecebidoIniciais   Float    @default(0)
+  totalRecebidoExito      Float    @default(0)
+  totalCustosReais        Float    @default(0)
+  
+  arquivado               Boolean  @default(false)
+  dataArquivamento        DateTime?
+  createdBy               String   @db.ObjectId
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@map("processos")
+}
+
+// --------------------------------------
+// Agenda, Tarefas e Andamentos
+// --------------------------------------
+
+model Compromisso {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  startDate   DateTime 
+  titulo      String
+  description String?
+  tipo        String   @default("outro") 
+  concluido   Boolean  @default(false)
+  userId      String   @db.ObjectId
+  user        User     @relation(fields: [userId], references: [id]) // OK!
+  processoId  String?  @db.ObjectId
+  createdAt   DateTime @default(now())
+
+  @@map("compromissos")
+}
+
+model Tarefa {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  processoId  String?  @db.ObjectId
+  titulo      String   
+  description String
+  responsavel String
+  prazo       String
+  concluida   Boolean  @default(false) 
+  userId      String   @db.ObjectId
+  
+  // --- ADICIONE ESTA LINHA PARA CASAR COM O USER ---
+  user        User     @relation(fields: [userId], references: [id])
+  
+  createdAt   DateTime @default(now())
+
+  @@map("tarefas")
+}
+
+model Andamento {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  processoId  String   @db.ObjectId
+  titulo      String
+  descricao   String
+  autorNome   String
+  createdBy   String   @db.ObjectId
+  createdAt   DateTime @default(now())
+
+  @@map("andamentos")
+}
+
+// --------------------------------------
+// Financeiro e Logs de Integração
+// --------------------------------------
+
+model Transacao {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  tipo             String   // entrada ou saida
+  categoria        String
+  valor            Float
+  data             String
+  descricao        String
+  processoId       String?  @db.ObjectId
+  recorrente       Boolean  @default(false)
+  mesesRecorrencia Int?
+  arquivado        Boolean  @default(false)
+  createdBy        String   @db.ObjectId
+  createdAt        DateTime @default(now())
+
+  @@map("transacoes")
+}
+
+model ChatHistory {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId        String   @db.ObjectId
+  sessionId     String?
+  userMessage   String
+  botResponse   String
+  action        String?
+  actionResult  Json?
+  createdAt     DateTime @default(now())
+
+  @@map("chat_history")
+}
