@@ -1,5 +1,3 @@
-// prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -18,14 +16,19 @@ model User {
   nome                String
   email               String   @unique
   senha               String
-  tipo                String   @default("cliente") 
+  tipo                String   @default("cliente") // 'admin' ou 'cliente'
   cpf                 String?
   telefone            String?
-  processosVinculados String[] @db.ObjectId 
   
-  // --- ADICIONE ESTAS DUAS LINHAS ABAIXO ---
+  // Relacionamentos Reais (Back-references)
+  processos           Processo[]
   compromissos        Compromisso[]
   tarefas             Tarefa[]
+  transacoes          Transacao[]
+  andamentos          Andamento[]
+  chatHistories       ChatHistory[]
+
+  processosVinculados String[] @db.ObjectId 
   
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
@@ -42,28 +45,32 @@ model Processo {
   clienteNome             String
   descricaoObjeto         String
   numeroInterno           String?
-  dataFechamentoContrato  String
+  dataFechamentoContrato  DateTime
   numeroProcesso          String?
-  responsavel             String   // Leonardo, Alberto ou Jenifer
-  tipoHonorarios          String   // Iniciais, Êxito, Ambos
+  responsavel             String   
+  tipoHonorarios          String   
   valorPrevistoIniciais   Float    @default(0)
   valorPrevistoExito      Float    @default(0)
   basePrevisao            String?
   dataEstimadaRecebimento String?
-  custosPrevistos        Float    @default(0)
+  custosPrevistos         Float    @default(0)
   statusProtocolamento    String   @default("Pendente de Protocolamento")
   statusGeral             String   @default("Contrato Fechado")
   clienteCpf              String?
   clienteEmail            String?
   
-  // Financeiro Consolidado
+  // Financeiro Consolidado (Realidade)
   totalRecebidoIniciais   Float    @default(0)
   totalRecebidoExito      Float    @default(0)
   totalCustosReais        Float    @default(0)
   
   arquivado               Boolean  @default(false)
   dataArquivamento        DateTime?
-  createdBy               String   @db.ObjectId
+
+  // Relacionamento com quem criou o processo (Advogado)
+  userId               String   @db.ObjectId
+  user                    User     @relation(fields: [userId], references: [id])
+
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
@@ -71,7 +78,7 @@ model Processo {
 }
 
 // --------------------------------------
-// Agenda, Tarefas e Andamentos
+// Agenda e Tarefas
 // --------------------------------------
 
 model Compromisso {
@@ -81,8 +88,11 @@ model Compromisso {
   description String?
   tipo        String   @default("outro") 
   concluido   Boolean  @default(false)
+  
+  // Relacionamento com User
   userId      String   @db.ObjectId
-  user        User     @relation(fields: [userId], references: [id]) // OK!
+  user        User     @relation(fields: [userId], references: [id])
+  
   processoId  String?  @db.ObjectId
   createdAt   DateTime @default(now())
 
@@ -97,9 +107,9 @@ model Tarefa {
   responsavel String
   prazo       String
   concluida   Boolean  @default(false) 
+
+  // Relacionamento com User
   userId      String   @db.ObjectId
-  
-  // --- ADICIONE ESTA LINHA PARA CASAR COM O USER ---
   user        User     @relation(fields: [userId], references: [id])
   
   createdAt   DateTime @default(now())
@@ -107,20 +117,8 @@ model Tarefa {
   @@map("tarefas")
 }
 
-model Andamento {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  processoId  String   @db.ObjectId
-  titulo      String
-  descricao   String
-  autorNome   String
-  createdBy   String   @db.ObjectId
-  createdAt   DateTime @default(now())
-
-  @@map("andamentos")
-}
-
 // --------------------------------------
-// Financeiro e Logs de Integração
+// Financeiro e Logs
 // --------------------------------------
 
 model Transacao {
@@ -134,20 +132,44 @@ model Transacao {
   recorrente       Boolean  @default(false)
   mesesRecorrencia Int?
   arquivado        Boolean  @default(false)
+  
+  // Relacionamento com User
   createdBy        String   @db.ObjectId
+  user             User     @relation(fields: [createdBy], references: [id])
+  
   createdAt        DateTime @default(now())
 
   @@map("transacoes")
 }
 
+model Andamento {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  processoId String   @db.ObjectId
+  titulo     String
+  descricao  String
+  autorNome  String
+  
+  // Relacionamento com User
+  createdBy  String   @db.ObjectId
+  user       User     @relation(fields: [createdBy], references: [id])
+  
+  createdAt  DateTime @default(now())
+
+  @@map("andamentos")
+}
+
 model ChatHistory {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId        String   @db.ObjectId
   sessionId     String?
   userMessage   String
   botResponse   String
   action        String?
   actionResult  Json?
+  
+  // Relacionamento com User
+  userId        String   @db.ObjectId
+  user          User     @relation(fields: [userId], references: [id])
+  
   createdAt     DateTime @default(now())
 
   @@map("chat_history")
