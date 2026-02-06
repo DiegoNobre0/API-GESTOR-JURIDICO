@@ -12,26 +12,27 @@ datasource db {
 // --------------------------------------
 
 model User {
-  id                  String   @id @default(auto()) @map("_id") @db.ObjectId
-  nome                String
-  email               String   @unique
-  senha               String
-  tipo                String   @default("cliente") // 'admin' ou 'cliente'
-  cpf                 String?
-  telefone            String?
-  
-  // Relacionamentos Reais (Back-references)
-  processos           Processo[]
-  compromissos        Compromisso[]
-  tarefas             Tarefa[]
-  transacoes          Transacao[]
-  andamentos          Andamento[]
-  chatHistories       ChatHistory[]
+  id       String  @id @default(auto()) @map("_id") @db.ObjectId
+  nome     String
+  email    String  @unique
+  senha    String
+  tipo     String  @default("cliente") // 'admin' ou 'cliente'
+  cpf      String?
+  telefone String?
 
-  processosVinculados String[] @db.ObjectId 
-  
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  // Relacionamentos Reais (Back-references)
+  processos          Processo[]
+  compromissos       Compromisso[]
+  tarefas            Tarefa[]
+  transacoes         Transacao[]
+  andamentos         Andamento[]
+  chatHistories      ChatHistory[]
+  conversasAssumidas Conversation[]
+
+  processosVinculados String[] @db.ObjectId
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("usuarios")
 }
@@ -47,8 +48,8 @@ model Processo {
   numeroInterno           String?
   dataFechamentoContrato  DateTime
   numeroProcesso          String?
-  responsavel             String   
-  tipoHonorarios          String   
+  responsavel             String
+  tipoHonorarios          String
   valorPrevistoIniciais   Float    @default(0)
   valorPrevistoExito      Float    @default(0)
   basePrevisao            String?
@@ -58,21 +59,21 @@ model Processo {
   statusGeral             String   @default("Contrato Fechado")
   clienteCpf              String?
   clienteEmail            String?
-  
+
   // Financeiro Consolidado (Realidade)
-  totalRecebidoIniciais   Float    @default(0)
-  totalRecebidoExito      Float    @default(0)
-  totalCustosReais        Float    @default(0)
-  
-  arquivado               Boolean  @default(false)
-  dataArquivamento        DateTime?
+  totalRecebidoIniciais Float @default(0)
+  totalRecebidoExito    Float @default(0)
+  totalCustosReais      Float @default(0)
+
+  arquivado        Boolean   @default(false)
+  dataArquivamento DateTime?
 
   // Relacionamento com quem criou o processo (Advogado)
-  userId               String   @db.ObjectId
-  user                    User     @relation(fields: [userId], references: [id])
+  userId String @db.ObjectId
+  user   User   @relation(fields: [userId], references: [id])
 
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("processos")
 }
@@ -83,36 +84,36 @@ model Processo {
 
 model Compromisso {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  startDate   DateTime 
+  startDate   DateTime
   titulo      String
   description String?
-  tipo        String   @default("outro") 
+  tipo        String   @default("outro")
   concluido   Boolean  @default(false)
-  
+
   // Relacionamento com User
-  userId      String   @db.ObjectId
-  user        User     @relation(fields: [userId], references: [id])
-  
-  processoId  String?  @db.ObjectId
-  createdAt   DateTime @default(now())
+  userId String @db.ObjectId
+  user   User   @relation(fields: [userId], references: [id])
+
+  processoId String?  @db.ObjectId
+  createdAt  DateTime @default(now())
 
   @@map("compromissos")
 }
 
 model Tarefa {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  processoId  String?  @db.ObjectId
-  titulo      String   
+  id          String  @id @default(auto()) @map("_id") @db.ObjectId
+  processoId  String? @db.ObjectId
+  titulo      String
   description String
   responsavel String
   prazo       String
-  concluida   Boolean  @default(false) 
+  concluida   Boolean @default(false)
 
   // Relacionamento com User
-  userId      String   @db.ObjectId
-  user        User     @relation(fields: [userId], references: [id])
-  
-  createdAt   DateTime @default(now())
+  userId String @db.ObjectId
+  user   User   @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
 
   @@map("tarefas")
 }
@@ -122,55 +123,145 @@ model Tarefa {
 // --------------------------------------
 
 model Transacao {
-  id               String   @id @default(auto()) @map("_id") @db.ObjectId
-  tipo             String   // entrada ou saida
+  id               String  @id @default(auto()) @map("_id") @db.ObjectId
+  tipo             String // entrada ou saida
   categoria        String
   valor            Float
   data             String
   descricao        String
-  processoId       String?  @db.ObjectId
-  recorrente       Boolean  @default(false)
+  processoId       String? @db.ObjectId
+  recorrente       Boolean @default(false)
   mesesRecorrencia Int?
-  arquivado        Boolean  @default(false)
-  
+  arquivado        Boolean @default(false)
+
   // Relacionamento com User
-  createdBy        String   @db.ObjectId
-  user             User     @relation(fields: [createdBy], references: [id])
-  
-  createdAt        DateTime @default(now())
+  createdBy String @db.ObjectId
+  user      User   @relation(fields: [createdBy], references: [id])
+
+  createdAt DateTime @default(now())
 
   @@map("transacoes")
 }
 
 model Andamento {
-  id         String   @id @default(auto()) @map("_id") @db.ObjectId
-  processoId String   @db.ObjectId
+  id         String @id @default(auto()) @map("_id") @db.ObjectId
+  processoId String @db.ObjectId
   titulo     String
   descricao  String
   autorNome  String
-  
+
   // Relacionamento com User
-  createdBy  String   @db.ObjectId
-  user       User     @relation(fields: [createdBy], references: [id])
-  
-  createdAt  DateTime @default(now())
+  createdBy String @db.ObjectId
+  user      User   @relation(fields: [createdBy], references: [id])
+
+  createdAt DateTime @default(now())
 
   @@map("andamentos")
 }
 
 model ChatHistory {
-  id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  sessionId     String?
-  userMessage   String
-  botResponse   String
-  action        String?
-  actionResult  Json?
-  
+  id           String  @id @default(auto()) @map("_id") @db.ObjectId
+  sessionId    String?
+  userMessage  String
+  botResponse  String
+  action       String?
+  actionResult Json?
+
   // Relacionamento com User
-  userId        String   @db.ObjectId
-  user          User     @relation(fields: [userId], references: [id])
-  
-  createdAt     DateTime @default(now())
+  userId String @db.ObjectId
+  user   User   @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
 
   @@map("chat_history")
+}
+
+model Conversation {
+  id             String  @id @default(auto()) @map("_id") @db.ObjectId
+  customerPhone  String  @unique // O ID do cliente é o telefone (ex: 557199999999)
+  customerName   String?
+  customerAvatar String?
+
+  status      String @default("OPEN") // OPEN, CLOSED, PENDING
+  channel     String @default("whatsapp")
+  unreadCount Int    @default(0)
+
+  // Snapshot da última mensagem para a Sidebar carregar rápido
+  lastMessageBody String?
+  lastMessageTime DateTime @default(now())
+
+  // Tags (Array de strings no Mongo)
+  tags String[] @default([])
+
+  workflowStep String  @default("TRIAGEM") // TRIAGEM, COLETA_FATOS, COLETA_DOCS, ASSINATURA, FINALIZADO
+  tipoCaso     String? // VOO, BANCO, SAUDE, GERAL
+  // Dados temporários que a IA coletou antes de criar o Processo oficial
+  tempData     Json?
+  // Relacionamento com Advogado/Atendente (Quem assumiu)
+  attendantId  String? @db.ObjectId
+  attendant    User?   @relation(fields: [attendantId], references: [id])
+
+  // Relacionamento com Mensagens
+  messages  Message[]
+  documents ConversationDocument[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  presentedAt DateTime?
+
+  @@map("conversations")
+}
+
+model ConversationDocument {
+  id             String @id @default(auto()) @map("_id") @db.ObjectId
+  conversationId String @db.ObjectId
+
+  tipo      String
+  messageId String? @db.ObjectId
+
+  fileName String?
+  mimeType String?
+  mediaUrl String?
+
+  validado  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+
+  @@map("conversation_documents")
+}
+
+model Message {
+  id    String  @id @default(auto()) @map("_id") @db.ObjectId
+  wa_id String? @unique // ID oficial da Meta (wamid.HBgL...)
+
+  content String
+  role    String // 'USER' (cliente), 'AGENT' (advogado), 'SYSTEM'
+
+  // Status de entrega da Meta
+  status String @default("sent") // sent, delivered, read, failed
+
+  // Suporte a Multimídia (PDFs, Imagens)
+  type     String  @default("text") // text, image, document, audio
+  mediaUrl String?
+  mimeType String?
+  fileName String?
+
+  // Relacionamento com a Conversa
+  conversationId String       @db.ObjectId
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("messages")
+}
+
+model AiDecisionLog {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  conversationId String   @db.ObjectId
+  etapaAnterior  String
+  tool           String
+  payload        Json
+  model          String
+  createdAt      DateTime @default(now())
 }
