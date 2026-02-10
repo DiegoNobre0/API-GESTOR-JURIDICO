@@ -193,7 +193,7 @@ model Conversation {
   // Tags (Array de strings no Mongo)
   tags String[] @default([])
 
-  workflowStep String  @default("TRIAGEM") // TRIAGEM, COLETA_FATOS, COLETA_DOCS, ASSINATURA, FINALIZADO
+  workflowStep String  @default("COLETA_FATOS") // TRIAGEM, COLETA_FATOS, COLETA_DOCS, ASSINATURA, FINALIZADO
   tipoCaso     String? // VOO, BANCO, SAUDE, GERAL
   // Dados temporários que a IA coletou antes de criar o Processo oficial
   tempData     Json?
@@ -205,26 +205,32 @@ model Conversation {
   messages  Message[]
   documents ConversationDocument[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   presentedAt DateTime?
 
   @@map("conversations")
+}
+
+enum EtapaDocumento {
+  ESSENCIAL
+  COMPLEMENTAR
 }
 
 model ConversationDocument {
   id             String @id @default(auto()) @map("_id") @db.ObjectId
   conversationId String @db.ObjectId
 
-  tipo      String
-  messageId String? @db.ObjectId
-
-  fileName String?
-  mimeType String?
-  mediaUrl String?
-
-  validado  Boolean  @default(false)
-  createdAt DateTime @default(now())
+  tipo          String
+  
+  messageId     String?  @db.ObjectId
+  extractedData Json?
+  fileName      String?
+  mimeType      String?
+  mediaUrl      String?
+  etapa          EtapaDocumento
+  validado      Boolean  @default(false)
+  createdAt     DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id])
 
@@ -250,8 +256,8 @@ model Message {
   // Relacionamento com a Conversa
   conversationId String       @db.ObjectId
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
+  processed      Boolean      @default(false) // 👈 ADICIONE ISSO
+  createdAt      DateTime     @default(now())
 
   @@map("messages")
 }

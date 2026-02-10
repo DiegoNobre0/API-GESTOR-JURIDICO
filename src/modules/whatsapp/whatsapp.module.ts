@@ -1,13 +1,14 @@
 
-import { FinanceiroService } from "../financeiro/financeiro.service.js";
+
 import { ChatbotService } from "@/infra/services/chatbot-service.js";
 import { WhatsappService } from "./whatsapp.service.js";
 import { WhatsappController } from "./whatsapp.controller.js";
 import type { FastifyInstance } from "fastify";
+import { FinanceiroService } from "../financeiro/financeiro.service.js";
 
 export async function whatsappModule(app: FastifyInstance) {
   const financeiroService = new FinanceiroService();
-  const chatbotService = new ChatbotService(financeiroService);
+  const chatbotService = new ChatbotService(FinanceiroService);
   
   const whatsappService = new WhatsappService(app, chatbotService);
   const whatsappController = new WhatsappController(whatsappService);

@@ -73,4 +73,6 @@ export function detectGreeting(texto: string): {
     hasTudoBem,
     isPureGreeting,
   };
+
+ 
 }
