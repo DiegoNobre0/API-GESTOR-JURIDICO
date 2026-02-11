@@ -32,8 +32,11 @@ app.register(fastifyJwt, {
 });
 
 // CORS
-app.register(cors, { origin: true });
-
+app.register(cors, {
+  origin: true, // Em produção, troque "true" pela URL do front (ex: "http://localhost:4200")
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], // Permite o PUT
+  allowedHeaders: ["Content-Type", "Authorization"],
+});
 // Multipart (Uploads) - REGISTRE APENAS UMA VEZ AQUI
 app.register(multipart, {
   limits: {
@@ -45,7 +48,7 @@ app.register(multipart, {
 app.register(fastifySocketIO as any, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST"]
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]   
   }
 });
 

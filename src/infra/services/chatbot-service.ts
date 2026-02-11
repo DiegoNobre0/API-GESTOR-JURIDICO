@@ -281,30 +281,42 @@ export class ChatbotService {
     /* -----------------------------
        DOCUMENTOS RECEBIDOS
     ----------------------------- */
-    const mensagensDocumento = await prisma.message.findMany({
-      where: {
-        conversationId: conversation.id,
-        type: 'document',
-        processed: false,
-      },
-      select: { fileName: true },
-    });
+    // const mensagensDocumento = await prisma.message.findMany({
+    //   where: {
+    //     conversationId: conversation.id,
+    //     type: 'document',
+    //     processed: false,
+    //   },
+    //   select: { fileName: true },
+    // });
+      // const documentosRecebidos = mensagensDocumento
+      // .map(d => d.fileName?.split('.')[0]?.toUpperCase())
+      // .filter(Boolean) as string[];
 
-
-    const documentosRecebidos = mensagensDocumento
-      .map(d => d.fileName?.split('.')[0]?.toUpperCase())
-      .filter(Boolean) as string[];
+const documentosRecebidos = await prisma.conversationDocument.findMany({
+  where: {
+    conversationId: conversation.id,
+    etapa: 'ESSENCIAL',
+    validado: true,
+  },
+  select: {
+    tipo: true,
+  },
+});
+  const documentosRecebidosCodigos = documentosRecebidos.map(
+  d => d.tipo.toUpperCase()
+);
 
     /* -----------------------------
        CHECKLISTS
     ----------------------------- */
     const documentosBasePendentes = DOCUMENTOS_BASE.filter(
-      doc => !documentosRecebidos.includes(doc.codigo),
+      doc => !documentosRecebidosCodigos.includes(doc.codigo),
     );
 
     const documentosCaso = CHECKLISTS[tipoCaso] ?? [];
     const documentosCasoPendentes = documentosCaso.filter(
-      doc => !documentosRecebidos.includes(doc.codigo),
+      doc => !documentosRecebidosCodigos.includes(doc.codigo),
     );
 
     const documentosPendentesAtuais =
@@ -356,7 +368,7 @@ export class ChatbotService {
     });
 
     // 🚨 CURTO-CIRCUITO PARA DOCUMENTOS
-    if (mensagensDocumento.length > 0 && estadoAtual === 'COLETA_DOCS') {
+    if (documentosRecebidos.length > 0 && estadoAtual === 'COLETA_DOCS') {
       if (documentosPendentesAtuais.length === 0) {
         await prisma.conversation.update({
           where: { customerPhone },
@@ -415,7 +427,7 @@ Agora um advogado irá analisar seu caso e entrar em contato com você.
       }
 
       // Recebe qualquer mídia sem processar
-      if (mensagensDocumento.length > 0) {
+      if (documentosRecebidos.length > 0) {
         return 'Arquivo recebido! Pode enviar mais ou digitar *FINALIZAR* quando terminar.';
       }
 

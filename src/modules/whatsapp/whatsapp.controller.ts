@@ -2,6 +2,7 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { WhatsappService } from "./whatsapp.service.js";
 import { ZapSignService } from "@/infra/services/zapsign-service.js";
+import { CreateProcessoFromConversationService } from "../processos/create-processo.service.js";
 
 export class WhatsappController {
   constructor(private service: WhatsappService) {}
@@ -59,28 +60,59 @@ export class WhatsappController {
   }
 
   // 4. POST /chat/conversations/:id/media
+  // async sendMedia(req: FastifyRequest, rep: FastifyReply) {
+  //   const { id } = req.params as { id: string };
+  //   const data = await req.file();
+    
+  //   if (!data) return rep.status(400).send('Arquivo não enviado');
+
+  //   const fs = require('fs');
+  //   const util = require('util');
+  //   const pipeline = util.promisify(require('stream').pipeline);
+  //   const tempPath = `./uploads/${data.filename}`;
+    
+  //   await pipeline(data.file, fs.createWriteStream(tempPath));
+
+  //   const response = await this.service.sendFileByConversationId(
+  //     id,
+  //     tempPath,
+  //     data.mimetype,
+  //     data.filename
+  //   );
+
+  //   fs.unlinkSync(tempPath);
+  //   return rep.status(200).send(response);
+  // }
+
+
+  // 4. POST /chat/conversations/:id/media
   async sendMedia(req: FastifyRequest, rep: FastifyReply) {
     const { id } = req.params as { id: string };
+    
+    // Pega o arquivo do multipart
     const data = await req.file();
     
-    if (!data) return rep.status(400).send('Arquivo não enviado');
+    if (!data) {
+      return rep.status(400).send({ error: 'Arquivo não enviado' });
+    }
 
-    const fs = require('fs');
-    const util = require('util');
-    const pipeline = util.promisify(require('stream').pipeline);
-    const tempPath = `./uploads/${data.filename}`;
-    
-    await pipeline(data.file, fs.createWriteStream(tempPath));
+    try {
+      // Converte o stream para Buffer (memória)
+      const buffer = await data.toBuffer();
 
-    const response = await this.service.sendFileByConversationId(
-      id,
-      tempPath,
-      data.mimetype,
-      data.filename
-    );
+      // Chama o serviço passando o Buffer
+      const response = await this.service.sendMediaMessage(
+        id,
+        buffer,
+        data.mimetype,
+        data.filename
+      );
 
-    fs.unlinkSync(tempPath);
-    return rep.status(200).send(response);
+      return rep.status(200).send(response);
+    } catch (error) {
+      console.error('Erro ao enviar mídia:', error);
+      return rep.status(500).send({ error: 'Falha ao processar arquivo' });
+    }
   }
 
   // 5. POST /chat/conversations/:id/read
@@ -144,6 +176,23 @@ export class WhatsappController {
     } catch (error) {
         console.error(error);
         return rep.status(500).send({ error: 'Erro ao gerar contrato' });
+    }
+}
+
+async transformarEmProcesso(req: FastifyRequest, rep: FastifyReply) {
+    const { id } = req.params as { id: string };
+    
+    // Supondo que você tenha o ID do usuário logado no request (via JWT)
+    // Se for automático pelo bot, você pode usar um ID de "Sistema" ou do primeiro admin
+    const userId = req.user?.sub || "ID_DO_ADVOGADO_PADRAO"; 
+
+    const service = new CreateProcessoFromConversationService();
+    
+    try {
+        const processo = await service.execute(id, userId);
+        return rep.status(201).send(processo);
+    } catch (err: any) {
+        return rep.status(500).send({ error: err.message });
     }
 }
 }

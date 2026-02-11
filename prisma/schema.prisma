@@ -37,47 +37,87 @@ model User {
   @@map("usuarios")
 }
 
-// --------------------------------------
-// Gestão de Processos Jurídicos
-// --------------------------------------
 
-model Processo {
-  id                      String   @id @default(auto()) @map("_id") @db.ObjectId
-  clienteNome             String
-  descricaoObjeto         String
-  numeroInterno           String?
-  dataFechamentoContrato  DateTime
-  numeroProcesso          String?
-  responsavel             String
-  tipoHonorarios          String
-  valorPrevistoIniciais   Float    @default(0)
-  valorPrevistoExito      Float    @default(0)
-  basePrevisao            String?
-  dataEstimadaRecebimento String?
-  custosPrevistos         Float    @default(0)
-  statusProtocolamento    String   @default("Pendente de Protocolamento")
-  statusGeral             String   @default("Contrato Fechado")
-  clienteCpf              String?
-  clienteEmail            String?
-
-  // Financeiro Consolidado (Realidade)
-  totalRecebidoIniciais Float @default(0)
-  totalRecebidoExito    Float @default(0)
-  totalCustosReais      Float @default(0)
-
-  arquivado        Boolean   @default(false)
-  dataArquivamento DateTime?
-
-  // Relacionamento com quem criou o processo (Advogado)
-  userId String @db.ObjectId
-  user   User   @relation(fields: [userId], references: [id])
-
+model Cliente {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  nome      String
+  // CPF e Telefone únicos para evitar duplicidade
+  cpf       String?  @unique
+  telefone  String   @unique
+  endereco  String?
+  email     String?
+  
+  // Um cliente pode ter vários processos
+  processos Processo[]
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  
+  @@map("clientes")
+}
+
+model Processo {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  
+  // --- VINCULAÇÃO COM CLIENTE (NOVO) ---
+  clienteId      String   @db.ObjectId
+  cliente        Cliente  @relation(fields: [clienteId], references: [id])
+  
+  // Mantemos esses campos como "cache" ou snapshot se quiser, 
+  // mas o ideal é puxar do cliente. Vou manter para não quebrar seu front atual.
+  clienteNome    String
+  clienteCpf     String?
+  clienteEmail   String?
+
+  // --- DADOS DO PROCESSO ---
+  numeroInterno  String   @default(cuid())
+  numeroProcesso String?
+  descricaoObjeto String
+  
+  responsavel    String   // Nome do advogado (ou link com User)
+  tipoHonorarios String
+  statusGeral    String   @default("Triagem Inicial") // Mudado de "Contrato Fechado" para refletir a entrada via bot
+  statusProtocolamento String @default("Pendente")
+
+  // --- FINANCEIRO ---
+  valorPrevistoIniciais Float @default(0)
+  valorPrevistoExito    Float @default(0)
+  basePrevisao          String?
+  custosPrevistos       Float @default(0)
+  
+  // --- DATAS ---
+  dataFechamentoContrato DateTime @default(now())
+  dataEstimadaRecebimento String?
+  
+  // --- RELACIONAMENTOS ---
+  userId         String   @db.ObjectId
+  user           User     @relation(fields: [userId], references: [id])
+  
+  andamentos     Andamento[]
+  arquivos       ProcessoArquivo[] // Relação com os arquivos
+  
+  dataArquivamento DateTime?
+  arquivado      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@map("processos")
 }
 
+model ProcessoArquivo {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  
+  processoId  String   @db.ObjectId
+  processo    Processo @relation(fields: [processoId], references: [id])
+  
+  tipo        String   // Ex: RG, COMP_RES, PROVAS
+  url         String
+  nomeArquivo String
+  
+  createdAt   DateTime @default(now())
+
+  @@map("processo_arquivos")
+}
 // --------------------------------------
 // Agenda e Tarefas
 // --------------------------------------
@@ -144,17 +184,20 @@ model Transacao {
 }
 
 model Andamento {
-  id         String @id @default(auto()) @map("_id") @db.ObjectId
-  processoId String @db.ObjectId
-  titulo     String
-  descricao  String
-  autorNome  String
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  
+  // Relacionamento com Processo
+  processoId  String   @db.ObjectId
+  processo    Processo @relation(fields: [processoId], references: [id])
 
-  // Relacionamento com User
-  createdBy String @db.ObjectId
-  user      User   @relation(fields: [createdBy], references: [id])
+  titulo      String   // Vamos salvar o "Tipo" aqui (Ex: "Publicação")
+  descricao   String
+  autorNome   String   // Nome do advogado que fez
 
-  createdAt DateTime @default(now())
+  createdBy   String   @db.ObjectId
+  user        User     @relation(fields: [createdBy], references: [id])
+
+  createdAt   DateTime @default(now())
 
   @@map("andamentos")
 }
