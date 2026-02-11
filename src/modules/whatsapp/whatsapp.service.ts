@@ -8,6 +8,43 @@ import fetch from 'node-fetch';
 import type { FastifyInstance } from 'fastify';
 import type { IncomingMessage, MetaMessagePayload } from './whatsapp.types.js';
 import { DocumentAnalysisService } from '@/infra/services/document-analysis.service.js';
+import { normalizarTipoDocumento } from '@/infra/services/utils/documentos.js';
+
+
+interface AnaliseDocumento {
+  legivel: boolean;
+  lado?: 'FRENTE' | 'VERSO' | 'FRENTE_E_VERSO';
+  camposExtraidos: {
+    nome?: string;
+    rg?: string;
+    cpf?: string;
+  };
+}
+
+
+
+function documentoIdentidadeCompleto(
+  tipo: 'RG' | 'CNH',
+  docs: any[]
+): boolean {
+  const docsDoTipo = docs.filter(d => d.tipo === tipo);
+
+  const temUnico = docsDoTipo.some(
+    d => d.extractedData?.lado === 'FRENTE_E_VERSO'
+  );
+
+  const temFrente = docsDoTipo.some(
+    d => d.extractedData?.lado === 'FRENTE'
+  );
+
+  const temVerso = docsDoTipo.some(
+    d => d.extractedData?.lado === 'VERSO'
+  );
+
+  return temUnico || (temFrente && temVerso);
+}
+
+
 
 
 export class WhatsappService {
@@ -297,29 +334,30 @@ export class WhatsappService {
   //   }
   // }
 
-  private async handleIncomingMedia(message: IncomingMessage, conversation: any) {
+  private async handleIncomingMedia(
+    message: IncomingMessage,
+    conversation: any
+  ) {
     try {
-      // 1. Validação de Etapa
-      const etapasAceitas = ['COLETA_DOCS', 'COLETA_DOCS_EXTRA'];
       const workflowStep = conversation.workflowStep?.trim();
 
-      if (!etapasAceitas.includes(workflowStep)) {
+      const fasesDocs = ['COLETA_DOCS', 'COLETA_DOCS_EXTRA'];
+      const estaEmFaseDeDocs = fasesDocs.includes(workflowStep);
+
+      // ============================
+      // UX – feedback imediato APENAS se estiver em fase de docs
+      // ============================
+      if (workflowStep === "COLETA_DOCS") {
         await this.sendText(
           conversation.customerPhone,
-          'Já recebi 👍 Vou analisar esse arquivo assim que chegarmos na etapa de documentação.',
+          'Recebi seu arquivo! 📎\nEstou analisando e validando, aguarde um instante...',
           conversation.id
         );
-        return;
       }
 
-      // [UX] Feedback Imediato
-      await this.sendText(
-        conversation.customerPhone,
-        "Recebi seu arquivo! 📎 \nEstou analisando e validando, aguarde um instante...",
-        conversation.id
-      );
-
-      // 2. Identificar ID e MimeType
+      // ============================
+      // Identificação da mídia
+      // ============================
       let mediaId = '';
       let mimeType = '';
       let mediaType: 'image' | 'document' | 'audio' = 'document';
@@ -332,12 +370,15 @@ export class WhatsappService {
           mediaType = 'image';
           fileName = `imagem_${Date.now()}.jpg`;
           break;
+
         case 'document':
           mediaId = message.document?.id || '';
           mimeType = message.document?.mime_type || 'application/pdf';
           mediaType = 'document';
-          fileName = message.document?.filename || `documento_${Date.now()}.pdf`;
+          fileName =
+            message.document?.filename || `documento_${Date.now()}.pdf`;
           break;
+
         case 'audio':
         case 'voice':
         case 'ptt':
@@ -348,80 +389,190 @@ export class WhatsappService {
           break;
       }
 
+
       if (!mediaId) return;
 
-      // 3. Download e Upload
+      // ============================
+      // Download + Upload
+      // ============================
       const fileBuffer = await this.downloadMediaFromMeta(mediaId);
 
-      // 4. Descobrir Contexto ATUAL (O que este documento representa?)
-      // Se estamos em EXTRA, é extra. Se estamos em DOCS, pegamos o primeiro da fila.
-      const pendentesAntes = await this.getDocumentosPendentes(conversation.id);
-      const isFaseExtra = workflowStep === 'COLETA_DOCS_EXTRA';
+      // // ============================
+      // // 🔊 ÁUDIO → TRANSCRIÇÃO
+      // // ============================
+      // if (mediaType === 'audio') {
 
-      // Se não tem pendentes mas a fase ainda é COLETA_DOCS, algo deu errado, tratamos como Extra ou erro
-      const docTypeContext = isFaseExtra ? 'DOCUMENTO_EXTRA' : (pendentesAntes[0] ?? 'DOCUMENTO_EXTRA');
+      //   // (opcional) upload cloud
+      //   const extension = fileName.split('.').pop() || 'ogg';
+      //   const folder = `clientes/${conversation.customerPhone}`;
+      //   const uploadResult = await this.storageService.uploadFile(
+      //     fileBuffer,
+      //     extension,
+      //     folder
+      //   );
 
-      // Upload R2
+      //   // salva o áudio
+      //   await prisma.message.create({
+      //     data: {
+      //       wa_id: message.id,
+      //       content: uploadResult.url,
+      //       role: 'USER',
+      //       type: 'audio',
+      //       status: 'read',
+      //       conversationId: conversation.id,
+      //       fileName,
+      //     }
+      //   });
+
+      //   // transcrição
+      //   const textoTranscrito =
+      //     await this.chatbotService.transcreverAudio(fileBuffer, mimeType);
+
+      //   // salva texto
+      //   const savedText = await prisma.message.create({
+      //     data: {
+      //       wa_id: `${message.id}_transcript`,
+      //       content: textoTranscrito,
+      //       role: 'USER',
+      //       type: 'text',
+      //       status: 'read',
+      //       conversationId: conversation.id,
+      //     }
+      //   });
+
+      //   this.app.io.emit('new_whatsapp_message', {
+      //     ...savedText,
+      //     conversationId: conversation.id,
+      //   });
+
+      //   // IA responde
+      //   if (!conversation.attendantId) {
+      //     const aiResponse = await this.chatbotService.chat(
+      //       textoTranscrito,
+      //       conversation.customerPhone
+      //     );
+
+      //     if (aiResponse) {
+      //       await this.sendText(
+      //         conversation.customerPhone,
+      //         aiResponse,
+      //         conversation.id
+      //       );
+      //     }
+      //   }
+
+      //   return; // 🔴 CRÍTICO
+      // }
+
       const extension = fileName.split('.').pop() || 'bin';
       const folder = `clientes/${conversation.customerPhone}`;
-      const uploadResult = await this.storageService.uploadFile(fileBuffer, extension, folder);
 
-      // 5. Análise de IA (OCR)
-      let analiseIA = null;
-      let tipoFinal = docTypeContext;
+      const uploadResult = await this.storageService.uploadFile(
+        fileBuffer,
+        extension,
+        folder
+      );
 
-      if (docTypeContext !== 'DOCUMENTO_EXTRA') {
-        analiseIA = await this.docAnalysisService.analyzeDocument(
-          fileBuffer,
-          docTypeContext
-        );
+      // ============================
+      // Definição de contexto do documento
+      // ============================
+      let tipoDocumento: any = 'COMPLEMENTAR';
+      let etapaDocumento: 'ESSENCIAL' | 'COMPLEMENTAR' = 'COMPLEMENTAR';
+      let analiseIA: any = null;
 
-        if (analiseIA?.legivel) {
-          tipoFinal =
-            analiseIA.tipo_identificado === 'RG'
-              ? 'RG'
-              : analiseIA.tipo_identificado === 'CNH'
-                ? 'RG' // CNH supre RG
-                : analiseIA.tipo_identificado === 'COMPROVANTE_RESIDENCIA'
-                  ? 'COMP_RES'
-                  : docTypeContext;
+      // Apenas na fase COLETA_DOCS existe documento obrigatório
+      if (workflowStep === 'COLETA_DOCS') {
+        const pendentes = await this.getDocumentosPendentes(conversation.id);
+
+        if (pendentes.length > 0) {
+          tipoDocumento = pendentes[0];
+          etapaDocumento = 'ESSENCIAL';
+
+          analiseIA = await this.docAnalysisService.analyzeDocument(
+            fileBuffer,
+            tipoDocumento
+          );
+
+          if (analiseIA?.legivel) {
+            if (analiseIA.tipo_identificado === 'CNH') tipoDocumento = 'CNH';
+            if (analiseIA.tipo_identificado === 'RG') tipoDocumento = 'RG';
+            if (analiseIA.tipo_identificado === 'COMPROVANTE_RESIDENCIA')
+              tipoDocumento = 'COMP_RES';
+          }
         }
       }
 
-      // 6. Salvar na tabela ConversationDocument
-      const isExtra = docTypeContext === 'DOCUMENTO_EXTRA';
+      // ============================
+      // Persistência do documento
+      // ============================
+
+      tipoDocumento = normalizarTipoDocumento(tipoDocumento);
 
       await prisma.conversationDocument.create({
         data: {
           conversationId: conversation.id,
-          tipo: isExtra ? 'DOCUMENTO' : tipoFinal,
-          etapa: isExtra ? 'COMPLEMENTAR' : 'ESSENCIAL',
+          tipo: tipoDocumento,
+          etapa: etapaDocumento,
           mediaUrl: uploadResult.url,
-          fileName: `${tipoFinal}.${extension}`,
+          fileName: `${tipoDocumento}.${extension}`,
           mimeType,
-          validado: isExtra ? true : (analiseIA?.legivel ?? false),
-          extractedData: isExtra ? {} : analiseIA ?? {},
-        }
+          validado: etapaDocumento === 'COMPLEMENTAR'
+            ? true
+            : analiseIA?.legivel ?? false,
+          extractedData:
+            etapaDocumento === 'ESSENCIAL' ? analiseIA ?? {} : {},
+        },
       });
 
-      // 7. Atualizar tempData com dados extraídos (se houver)
-      if (!isExtra && analiseIA && analiseIA.legivel) {
+      // ============================
+      // Atualiza tempData (se OCR válido)
+      // ============================
+      if (
+        etapaDocumento === 'ESSENCIAL' &&
+        analiseIA &&
+        analiseIA.legivel
+      ) {
+        const patch: any = {};
+
+        if (analiseIA.lado === 'FRENTE_E_VERSO') {
+          patch.extracted_RG_FRENTE_legivel = true;
+          patch.extracted_RG_VERSO_legivel = true;
+        }
+
+        if (analiseIA.lado === 'FRENTE') {
+          patch.extracted_RG_FRENTE_legivel = true;
+        }
+
+        if (analiseIA.lado === 'VERSO') {
+          patch.extracted_RG_VERSO_legivel = true;
+        }
+
+
         await prisma.conversation.update({
           where: { id: conversation.id },
           data: {
             tempData: {
               ...(conversation.tempData as object ?? {}),
-              [`extracted_${docTypeContext}_nome`]: analiseIA.nome_completo,
-              [`extracted_${docTypeContext}_rg`]: analiseIA.rg_numero,
-              [`extracted_${docTypeContext}_cpf`]: analiseIA.cpf_numero,
-              [`extracted_${docTypeContext}_endereco`]: analiseIA.endereco_completo,
-              [`extracted_${docTypeContext}_legivel`]: true
-            }
-          }
+              [`extracted_${tipoDocumento}_nome`]:
+                analiseIA.nome_completo,
+              [`extracted_${tipoDocumento}_rg`]:
+                analiseIA.rg_numero,
+              [`extracted_${tipoDocumento}_cpf`]:
+                analiseIA.cpf_numero,
+              [`extracted_${tipoDocumento}_endereco`]:
+                analiseIA.endereco_completo,
+              [`extracted_${tipoDocumento}_legivel`]: true,
+            },
+          },
+
         });
+        console.log(`✅ Dados extraídos do ${tipoDocumento}:`, analiseIA);
+
       }
 
-      // 8. Registrar mensagem no chat
+      // ============================
+      // Log da mensagem no chat
+      // ============================
       const savedMessage = await prisma.message.create({
         data: {
           wa_id: message.id,
@@ -430,83 +581,101 @@ export class WhatsappService {
           type: mediaType,
           status: 'read',
           conversationId: conversation.id,
-          fileName: fileName,
-        }
+          fileName: `${tipoDocumento}.${extension}`,
+        },
       });
-      this.app.io.emit('new_whatsapp_message', { ...savedMessage, conversationId: conversation.id });
 
-      // ===========================================================================
-      // 9. LÓGICA DE TRANSIÇÃO E RESPOSTA DO BOT (AQUI ESTÁ A MÁGICA)
-      // ===========================================================================
+      this.app.io.emit('new_whatsapp_message', {
+        ...savedMessage,
+        conversationId: conversation.id,
+      });
+
+      // ============================
+      // RESPOSTA DO BOT (somente em fases de docs)
+      // ============================
+      if (!estaEmFaseDeDocs) return;
 
       let promptDoBot = '';
 
-      // Verifica o que FALTA AGORA (depois de ter salvo o documento acima)
-      const pendentesAgora = await this.getDocumentosPendentes(conversation.id);
+      const pendentesAgora = await this.getDocumentosPendentes(
+        conversation.id
+      );
 
-      // CENÁRIO 1: Fase Extra (Já acabou os obrigatórios)
-      if (isExtra) {
-        promptDoBot = `[SISTEMA]: O usuário enviou um documento complementar (Provas Extras).
-        Agradeça e diga que isso ajuda muito. Pergunte se tem mais provas ou se pode FINALIZAR.`;
+      // === FASE EXTRA ===
+      if (workflowStep === 'COLETA_DOCS_EXTRA') {
+        // Apenas confirma recebimento visual
+        await this.sendText(
+          conversation.customerPhone,
+          'Recebi seu arquivo!',
+          conversation.id
+        );
+
+        return; // 🔴 ISSO É CRÍTICO
       }
-      // CENÁRIO 2: Acabou os documentos obrigatórios AGORA
-      else if (pendentesAgora.length === 0) {
 
-        // Atualiza a fase no banco para EXTRA
+      // === ACABARAM OS OBRIGATÓRIOS AGORA ===
+      else if (pendentesAgora.length === 0) {
         await prisma.conversation.update({
           where: { id: conversation.id },
-          data: { workflowStep: 'COLETA_DOCS_EXTRA' }
+          data: { workflowStep: 'COLETA_DOCS_EXTRA' },
         });
 
         const tipoCaso = conversation.tipoCaso || 'seu caso';
 
-        promptDoBot = `[SISTEMA]: O usuário acabou de enviar o último documento obrigatório (${docTypeContext}).
-        
-        AÇÃO OBRIGATÓRIA:
-        1. Diga: "Perfeito! Recebemos todas as documentações básicas."
-        2. Explique que AGORA ele pode enviar provas adicionais para reforçar o ${tipoCaso} (fotos, vídeos, áudios, prints).
-        3. Diga que quando ele terminar de enviar tudo, deve digitar "FINALIZAR".`;
+        promptDoBot = `
+[SISTEMA]:
+Perfeito! Recebemos todas as documentações básicas.
+Explique que agora ele pode enviar provas adicionais (fotos, vídeos, áudios, prints) para reforçar ${tipoCaso}.
+Diga que quando terminar, deve digitar FINALIZAR.
+`;
       }
-      // CENÁRIO 3: Ainda faltam documentos obrigatórios (Ex: Mandou RG, falta Comprovante)
+
+      // === AINDA FALTAM DOCUMENTOS ===
       else {
-        const proximoDocCodigo = pendentesAgora[0];
-        let nomeProximoDoc = proximoDocCodigo;
+        const proximo = pendentesAgora[0];
+        let nomeProximo = proximo;
 
-        if (proximoDocCodigo === 'COMP_RES') nomeProximoDoc = 'Comprovante de Residência';
-        if (proximoDocCodigo === 'RG') nomeProximoDoc = 'RG ou CNH';
+        if (proximo === 'RG') nomeProximo = 'RG ou CNH (foto legível)';
+        if (proximo === 'COMP_RES')
+          nomeProximo = 'Comprovante de Residência';
 
-        // Feedback sobre o documento atual (OCR)
-        let feedbackAtual = '';
-        if (analiseIA && !analiseIA.legivel) {
-          feedbackAtual = `A IA identificou que a foto do ${docTypeContext} ficou um pouco ilegível/borrada.`;
-          // Aqui você poderia pedir para reenviar, mas para não travar o fluxo, 
-          // vamos apenas avisar e pedir o próximo, ou ser rígido e pedir para reenviar.
-          // Estratégia Fluxo Contínuo: Aceita e pede o próximo.
-        } else {
-          const nomeLido = analiseIA?.nome_completo ? `(Li o nome: ${analiseIA.nome_completo})` : '';
-          feedbackAtual = `O ${docTypeContext} foi recebido e validado com sucesso ${nomeLido}.`;
-        }
+        const feedback =
+          analiseIA && !analiseIA.legivel
+            ? `A imagem enviada ficou um pouco ilegível, mas seguimos com o processo.`
+            : `Documento recebido com sucesso.`;
 
-        promptDoBot = `[SISTEMA]: ${feedbackAtual}
-        
-        AÇÃO OBRIGATÓRIA:
-        1. Confirme o recebimento.
-        2. IMEDIATAMENTE peça o próximo documento da lista: **${nomeProximoDoc}**.
-        Seja clara e direta.`;
+        promptDoBot = `
+[SISTEMA]:
+${feedback}
+Peça imediatamente o próximo documento: ${nomeProximo}.
+Seja claro e direto.
+`;
       }
 
-      // 10. Aciona o Bot com a instrução precisa
-      const aiResponse: any = await this.chatbotService.chat(promptDoBot, conversation.customerPhone);
+      const aiResponse = await this.chatbotService.chat(
+        promptDoBot,
+        conversation.customerPhone
+      );
 
       if (aiResponse) {
-        await this.sendText(conversation.customerPhone, aiResponse, conversation.id);
+        await this.sendText(
+          conversation.customerPhone,
+          aiResponse,
+          conversation.id
+        );
       }
-
     } catch (error) {
       console.error('❌ Erro processamento mídia:', error);
-      await this.sendText(conversation.customerPhone, 'Tive uma instabilidade ao processar o arquivo. Tente reenviar.', conversation.id);
+
+      await this.sendText(
+        conversation.customerPhone,
+        'Tive uma instabilidade ao processar o arquivo. Pode tentar reenviar?',
+        conversation.id
+      );
     }
   }
+
+
 
   // ===========================================================================
   // CORREÇÃO 2: Adicionando o método que faltava (Erro TypeScript)
@@ -589,6 +758,23 @@ export class WhatsappService {
   }
 
   // --- Auxiliar: Checklist de Pendências ---
+  // private async getDocumentosPendentes(conversationId: string) {
+
+  //   const docs = await prisma.conversationDocument.findMany({
+  //     where: {
+  //       conversationId,
+  //       etapa: 'ESSENCIAL',
+  //       validado: true,
+  //     },
+  //     select: { tipo: true },
+  //   });
+
+  //   const recebidos = docs.map(d => normalizarTipoDocumento(d.tipo));
+
+  //   const checklistBase = ['RG', 'COMP_RES'];
+
+  //   return checklistBase.filter(d => !recebidos.includes(d));
+  // }
   private async getDocumentosPendentes(conversationId: string) {
     const docs = await prisma.conversationDocument.findMany({
       where: {
@@ -596,15 +782,52 @@ export class WhatsappService {
         etapa: 'ESSENCIAL',
         validado: true,
       },
-      select: { tipo: true },
+      select: {
+        tipo: true,
+        extractedData: true,
+      },
     });
 
-    const recebidos = docs.map(d => d.tipo);
+    const pendentes: string[] = [];
 
-    const checklistBase = ['RG', 'COMP_RES'];
+    // ======================
+    // IDENTIDADE (RG ou CNH)
+    // ======================
+    const docsIdentidade = docs.filter(
+      d => d.tipo === 'RG' || d.tipo === 'CNH'
+    );
 
-    return checklistBase.filter(d => !recebidos.includes(d));
+    const temDocumentoUnico = docsIdentidade.some(
+      (d: any) => d.extractedData?.lado === 'FRENTE_E_VERSO'
+    );
+
+    const temFrente = docsIdentidade.some(
+      (d: any) => d.extractedData?.lado === 'FRENTE'
+    );
+
+    const temVerso = docsIdentidade.some(
+      (d: any) => d.extractedData?.lado === 'VERSO'
+    );
+
+    const identidadeCompleta =
+      temDocumentoUnico || (temFrente && temVerso);
+
+    if (!identidadeCompleta) {
+      pendentes.push('RG'); // texto: "RG ou CNH"
+    }
+
+    // ======================
+    // Comprovante de residência
+    // ======================
+    const temCompRes = docs.some(d => d.tipo === 'COMP_RES');
+
+    if (!temCompRes) {
+      pendentes.push('COMP_RES');
+    }
+
+    return pendentes;
   }
+
 
   // --- Auxiliar: Atualiza Stats da Conversa ---
   private async updateConversationStats(id: string, lastBody: string) {

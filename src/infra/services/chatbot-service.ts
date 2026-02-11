@@ -9,11 +9,13 @@ import { DocumentExceptionPolicy } from './policy/document-exception-policy.js';
 import { detectGreeting } from './policy/greeting.util.js';
 import type { ModelMessage } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
+// import Groq from 'groq-sdk';
+import { File } from 'node:buffer';
+
+
 /* ---------------------------------
    TIPOS & CONSTANTES
 --------------------------------- */
-
-
 type Intent =
   | 'SAUDACAO_RETORNO'
   | 'APRESENTACAO_INICIAL'
@@ -217,7 +219,7 @@ Quando terminar, é só digitar *FINALIZAR*.
 --------------------------------- */
 
 const DOCUMENTOS_BASE: DocumentoChecklist[] = [
-  { codigo: 'RG', descricao: 'RG ou CNH (Frente e Verso)' },
+  { codigo: 'RG', descricao: 'RG ou CNH (Frente e Verso ou inteiro)' },
   { codigo: 'COMP_RES', descricao: 'Comprovante de residência' },
 ];
 
@@ -260,6 +262,10 @@ const CHECKLISTS: Record<TipoCaso, DocumentoChecklist[]> = {
 export class ChatbotService {
   private zapSignService = new ZapSignService();
 
+  //  private groqClient = new Groq({
+  //   apiKey: process.env.GROQ_API_KEY!,
+  // });
+
   constructor() { }
 
   async chat(message: string, customerPhone: string) {
@@ -289,23 +295,23 @@ export class ChatbotService {
     //   },
     //   select: { fileName: true },
     // });
-      // const documentosRecebidos = mensagensDocumento
-      // .map(d => d.fileName?.split('.')[0]?.toUpperCase())
-      // .filter(Boolean) as string[];
+    // const documentosRecebidos = mensagensDocumento
+    // .map(d => d.fileName?.split('.')[0]?.toUpperCase())
+    // .filter(Boolean) as string[];
 
-const documentosRecebidos = await prisma.conversationDocument.findMany({
-  where: {
-    conversationId: conversation.id,
-    etapa: 'ESSENCIAL',
-    validado: true,
-  },
-  select: {
-    tipo: true,
-  },
-});
-  const documentosRecebidosCodigos = documentosRecebidos.map(
-  d => d.tipo.toUpperCase()
-);
+    const documentosRecebidos = await prisma.conversationDocument.findMany({
+      where: {
+        conversationId: conversation.id,
+        etapa: 'ESSENCIAL',
+        validado: true,
+      },
+      select: {
+        tipo: true,
+      },
+    });
+    const documentosRecebidosCodigos = documentosRecebidos.map(
+      d => d.tipo.toUpperCase()
+    );
 
     /* -----------------------------
        CHECKLISTS
@@ -374,7 +380,7 @@ const documentosRecebidos = await prisma.conversationDocument.findMany({
           where: { customerPhone },
           data: { workflowStep: 'COLETA_DOCS_EXTRA' },
         });
-
+        estadoAtual = 'COLETA_DOCS_EXTRA';
         conversation = await prisma.conversation.findUnique({
           where: { customerPhone },
         }) as NonNullable<typeof conversation>;
@@ -420,7 +426,7 @@ Agora preciso de: *${documentosPendentesAtuais.map(d => d.descricao).join(', ')}
         });
 
         return `
-Perfeito! Recebemos todas as provas 🙏  
+Perfeito! Recebemos todas as provas!  
 
 Agora um advogado irá analisar seu caso e entrar em contato com você.
 `.trim();
@@ -471,6 +477,9 @@ Agora um advogado irá analisar seu caso e entrar em contato com você.
         .trim();
     }
 
+     console.log('[DEBUG] IA FALA:', textoResposta);
+
+
     const callTipoCaso = toolCalls.find(
       t => t.toolName === 'definirTipoCaso'
     );
@@ -506,6 +515,19 @@ Agora um advogado irá analisar seu caso e entrar em contato com você.
         const args = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;
 
         console.log('[DEBUG] Salvando Fatos:', args);
+
+        const parsed = registrarFatosSchema.safeParse(args);
+
+        if (!parsed.success) {
+          console.warn('[IA tentou registrar fatos incompletos]', parsed.error);
+
+          // ❌ IGNORA a tool call
+          // ✅ segue o fluxo normal perguntando o que falta
+          return this.responder({
+            intent: 'AGUARDAR_RESPOSTA',
+            conversation: buildContext(conversation),
+          });
+        }
 
         // 1. Salva no banco
         await prisma.conversation.update({
@@ -807,13 +829,17 @@ Sua missão é acolher o cliente, entender o problema e organizar a documentaç�
 - **Erro comum:** Não peça relato detalhado ou documentos logo no "Oi".
 
 ## 2. COLETA DE FATOS (Se Etapa = COLETA_FATOS)
-- Objetivo: Preencher as lacunas mentais: [DANO], [EMPRESA], [DATA].
+- Objetivo: Preencher as lacunas mentais: [FATO OCORRIDO], [EMPRESA], [DATA], [PREJUIZO].
 - **Técnica de Ouro:** Validação + Pergunta.
   - Ruim: "Qual a empresa?"
   - Bom: "Entendi, realmente é uma situação frustrante esperar tanto. E qual foi a companhia aérea?"
 - **Regra de Fluxo:** Pergunte UM dado por vez. Não bombardeie o cliente.
 - **Inteligência:** Se o cliente já disse a data no texto anterior, NÃO PERGUNTE DE NOVO. Apenas confirme.
-- **Fim da Etapa:** Se você já tem os 3 pilares (Dano, Empresa, Data), pare de perguntar e chame a tool 'atualizarEtapa'.
+- **Fim da Etapa:** Se você já tem os 4 pilares (Fato Ocorrido, Empresa, Data, Prejuízo), pare de perguntar e chame a tool 'atualizarEtapa'.
+- É PROIBIDO chamar a tool "registrarFatos" se QUALQUER campo estiver incompleto.
+- Nunca envie strings vazias.
+- Se faltar qualquer informação, faça UMA pergunta objetiva e aguarde resposta.
+- Apenas chame "registrarFatos" quando todos os campos estiverem totalmente preenchidos.
 
 ### REGRA CRÍTICA – REGISTRO DE FATOS (OBRIGATÓRIO)
 
@@ -909,35 +935,6 @@ Agora, responda à última mensagem do cliente seguindo estas diretrizes.
   }
 
 
-  private gerarMensagemDocsExtras(tipoCaso: TipoCaso) {
-    const checklist = CHECKLISTS[tipoCaso] ?? [];
-
-    if (!checklist.length) {
-      return `
-Agora você pode enviar qualquer documento ou prova que considere importante:
-fotos, vídeos, áudios, prints ou comprovantes.
-
-Quando terminar, digite *FINALIZAR*.
-`.trim();
-    }
-
-    const itens = checklist
-      .map(doc => `• ${doc.descricao}`)
-      .join('\n');
-
-    return `
-Perfeito, agora você pode enviar **outras provas** para reforçar seu caso.
-
-Costuma ajudar bastante:
-${itens}
-
-Pode enviar fotos, PDFs, áudios ou vídeos.
-Quando terminar, é só digitar *FINALIZAR*.
-`.trim();
-  }
-
-
-
   private async responder(input: {
     intent: Intent;
     contexto?: Record<string, any>;
@@ -963,23 +960,7 @@ Quando terminar, é só digitar *FINALIZAR*.
     let mensagemInstrucao = JSON.stringify({
       intent: input.intent,
       contexto: input.contexto ?? {},
-    });
-
-    // Se for uma transição automática de etapa, damos uma ordem explícita
-    // if (input.intent === 'TRANSICAO_ETAPA' && input.conversation.estadoAtual === 'COLETA_DOCS') {
-    //   mensagemInstrucao = `
-    //   [INSTRUÇÃO DO SISTEMA]: 
-    //   Os fatos acabaram de ser completados. O status mudou para COLETA_DOCS.
-
-    //   NÃO responda apenas "registrei os dados".
-    //   VOCÊ DEVE IMEDIATAMENTE:
-    //   1. Fazer o Resumo do caso (Empresa, Data, Dano).
-    //   2. Pedir o primeiro documento da lista: ${input.conversation.documentosEsperadosAgora?.[0] || 'Documentos'}.
-
-    //   Siga o roteiro da etapa COLETA_DOCS agora.
-    //   `;
-    // }
-    // -----------------------------------------------------
+    });    
 
     const { text } = await generateText({
       model: groq('llama-3.3-70b-versatile'),
@@ -1000,6 +981,29 @@ Quando terminar, é só digitar *FINALIZAR*.
     return textoLimpo;
   }
 
+  // // ======================================================
+  // // 🎙️ TRANSCRIÇÃO DE ÁUDIO (WHATSAPP / PTT)
+  // // ======================================================
+  // async transcreverAudio(
+  //   audioBuffer: Buffer,
+  //   mimeType: string
+  // ): Promise<string> {
+  //   const file = new File(
+  //     [audioBuffer],
+  //     'audio.ogg',
+  //     { type: mimeType }
+  //   );
+
+  //   const transcription =
+  //     await this.groqClient.audio.transcriptions.create({
+  //       file,
+  //       model: 'whisper-large-v3',
+  //       language: 'pt',
+  //       response_format: 'json',
+  //     });
+
+  //   return transcription.text?.trim() || '';
+  // }
 
 
 
