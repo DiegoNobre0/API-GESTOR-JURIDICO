@@ -21,7 +21,7 @@ interface AnaliseDocumento {
 }
 
 export class WhatsappService {
-  private version = 'v19.0';
+  private version = 'v24.0';
   private baseUrl = `https://graph.facebook.com/${this.version}/${process.env.WHATSAPP_PHONE_NUMBER_ID}`;
   private token = process.env.WHATSAPP_ACCESS_TOKEN;
   private storageService: StorageService; // <--- Instância do Storage
@@ -44,6 +44,7 @@ export class WhatsappService {
   // ===========================================================================
 
   async processWebhook(body: any) {
+    console.log('🔥 WEBHOOK BODY:', JSON.stringify(body, null, 2));
     const changes = body.entry?.[0]?.changes?.[0];
     if (!changes) return;
 
@@ -1097,6 +1098,13 @@ Seja claro e direto.
       },
       body: JSON.stringify(body)
     });
+
+    const json = await res.json();
+
+    if (!res.ok) {
+      console.error('❌ ERRO META:', json);
+    }
+
     return res.json();
   }
 
