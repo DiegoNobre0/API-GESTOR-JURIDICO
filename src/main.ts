@@ -6,12 +6,7 @@ import multipart from '@fastify/multipart'; // Importação agrupada
 import cron from 'node-cron';
 
 // Instâncias Globais e Módulos
-import { prisma } from "@/lib/prisma.js";
-import { MailService } from "@/infra/services/mail-service.js";
 
-import { authModule } from '@/modules/auth/auth.module.js';
-import { dashboardModule } from '@/modules/dashboard/dashboard.module.js';
-import { processosModule } from '@/modules/processos/processos.module.js';
 
 
 import { usersModule } from './modules/users/users.module.js';
@@ -24,6 +19,10 @@ import { leadsModule } from './modules/leads/leads.module.js';
 import { uploadRoutes } from './modules/processos/upload.controller.js';
 import { clientesRoutes } from './modules/cliente/clientes.module.js';
 import { financeiroModule } from './modules/financeiro/financeiro.module.js';
+import { authModule } from './modules/auth/auth.module.js';
+import { dashboardModule } from './modules/dashboard/dashboard.module.js';
+import { processosModule } from './modules/processos/processos.module.js';
+import { MailService } from './infra/services/mail-service.js';
 
 const app = Fastify({ logger: true });
 
