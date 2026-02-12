@@ -267,6 +267,8 @@ export class ChatbotService {
   constructor() { }
 
   async chat(message: string, customerPhone: string) {
+
+
     let conversation = await prisma.conversation.findUnique({
       where: { customerPhone },
     });
@@ -275,6 +277,20 @@ export class ChatbotService {
 
     const texto = message.trim();
     const agora = new Date();
+
+    if (texto.toLowerCase() === '/deletar') {
+      // 1. Deletamos os documentos vinculados a esta conversa
+      await prisma.conversationDocument.deleteMany({
+        where: { conversationId: conversation.id }
+      });
+
+      // 2. Deletamos a conversa em si
+      await prisma.conversation.delete({
+        where: { customerPhone }
+      });
+
+      return "♻️ *Histórico resetado!* Seus dados e documentos foram apagados. Você já pode enviar um 'Oi' para iniciar um novo teste.";
+    }
 
     let estadoAtual = conversation.workflowStep as WorkflowStep;
     let tipoCaso = (conversation.tipoCaso as TipoCaso) ?? 'GERAL';
@@ -475,7 +491,7 @@ Agora um advogado irá analisar seu caso e entrar em contato com você.
         .trim();
     }
 
-     console.log('[DEBUG] IA FALA:', textoResposta);
+    console.log('[DEBUG] IA FALA:', textoResposta);
 
 
     const callTipoCaso = toolCalls.find(
@@ -646,7 +662,6 @@ Agora um advogado irá analisar seu caso e entrar em contato com você.
 
     return textoResposta;
   }
-
 
 
   /* ---------------------------------
@@ -958,7 +973,7 @@ Agora, responda à última mensagem do cliente seguindo estas diretrizes.
     let mensagemInstrucao = JSON.stringify({
       intent: input.intent,
       contexto: input.contexto ?? {},
-    });    
+    });
 
     const { text } = await generateText({
       model: groq('llama-3.3-70b-versatile'),
