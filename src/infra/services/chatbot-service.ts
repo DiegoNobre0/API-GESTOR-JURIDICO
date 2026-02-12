@@ -1,7 +1,7 @@
 import { generateText, tool } from 'ai';
 import { groq } from '@ai-sdk/groq';
 import { z } from 'zod';
-import { prisma } from '@/lib/prisma.js';
+import { prisma } from '../../lib/prisma.js';
 
 import { ZapSignService } from './zapsign-service.js';
 

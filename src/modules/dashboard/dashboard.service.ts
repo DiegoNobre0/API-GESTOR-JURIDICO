@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma.js";
+import { prisma } from "../../lib/prisma.js";
 
 export class DashboardService {
   async getStats(userId: string) {
@@ -41,11 +41,11 @@ export class DashboardService {
       receitaMes: receitaMes, // Campo exigido pelo front-end
       
       // Dados extras para os gráficos que você já preparou
-      financeiro: {
-        totalPrevisto: processos.reduce((acc, p) => acc + (p.valorPrevistoIniciais + p.valorPrevistoExito), 0),
-        totalRecebido: processos.reduce((acc, p) => acc + (p.totalRecebidoIniciais + p.totalRecebidoExito), 0),
-        totalCustos: processos.reduce((acc, p) => acc + p.totalCustosReais, 0),
-      },
+      // financeiro: {
+      //   totalPrevisto: processos.reduce((acc, p) => acc + (p.valorPrevistoIniciais + p.valorPrevistoExito), 0),
+      //   totalRecebido: processos.reduce((acc, p) => acc + (p.totalRecebidoIniciais + p.totalRecebidoExito), 0),
+      //   totalCustos: processos.reduce((acc, p) => acc + p.totalCustosReais, 0),
+      // },
       statusDistribuicao: {
         contratoFechado: processos.filter(p => p.statusGeral === "Contrato Fechado").length,
         emAndamento: processos.filter(p => p.statusGeral === "Em Andamento").length,

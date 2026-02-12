@@ -1,7 +1,7 @@
 
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { WhatsappService } from "./whatsapp.service.js";
-import { ZapSignService } from "@/infra/services/zapsign-service.js";
+import { ZapSignService } from "../../infra/services/zapsign-service.js";
 import { CreateProcessoFromConversationService } from "../processos/create-processo.service.js";
 
 export class WhatsappController {

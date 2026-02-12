@@ -1,7 +1,8 @@
-import { PasswordHasher } from "@/shared/password-hasher.js";
+
 
 import type { LoginInput } from "./dto/login.dto.js";
 import type { IUserRepository } from "../users/repositories/user.repository.js";
+import { PasswordHasher } from "../../shared/password-hasher.js";
 
 export class AuthService {
   constructor(private userRepository: IUserRepository) {}

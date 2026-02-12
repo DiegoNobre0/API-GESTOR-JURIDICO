@@ -1,13 +1,13 @@
-import { prisma } from '@/lib/prisma.js';
-import { ChatbotService } from '@/infra/services/chatbot-service.js';
-import { StorageService } from '@/infra/services/storage.service.js'; // <--- IMPORTANTE
+import { prisma } from '../../lib/prisma.js';
+import { ChatbotService } from '../../infra/services/chatbot-service.js';
+import { StorageService } from '../../infra/services/storage.service.js'; // <--- IMPORTANTE
 
 import FormData from 'form-data';
 import fetch from 'node-fetch';
 import type { FastifyInstance } from 'fastify';
 import type { IncomingMessage, MetaMessagePayload } from './whatsapp.types.js';
-import { DocumentAnalysisService } from '@/infra/services/document-analysis.service.js';
-import { normalizarTipoDocumento } from '@/infra/services/utils/documentos.js';
+import { DocumentAnalysisService } from '../../infra/services/document-analysis.service.js';
+import { normalizarTipoDocumento } from '../../infra/services/utils/documentos.js';
 
 
 interface AnaliseDocumento {

@@ -6,7 +6,7 @@ import multipart from '@fastify/multipart';
 import cron from 'node-cron';
 
 // --- IMPORTAÇÕES COM CAMINHOS RELATIVOS (CORRIGIDO) ---
-import { prisma } from "./lib/prisma.js"; // Substituído @/lib por ./lib
+import { prisma } from "./lib/prisma.js"; 
 import { MailService } from './infra/services/mail-service.js';
 
 import { authModule } from './modules/auth/auth.module.js';

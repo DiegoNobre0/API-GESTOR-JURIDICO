@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/prisma.js'; // Ajuste o import conforme seu projeto
+import { prisma } from '../../lib/prisma.js'; // Ajuste o import conforme seu projeto
 import type { DocumentoView, LeadJuridico } from './leads.types.js';
 
 

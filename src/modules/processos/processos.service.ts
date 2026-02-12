@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma.js";
+import { prisma } from "../../lib/prisma.js";
 import { Prisma } from "@prisma/client";
 import { ProcessoEntity } from "./entities/processo.entity.js";
 import type { CreateProcessoInput } from "./dto/create-processo.dto.js";

@@ -1,6 +1,6 @@
 
-import type { MailService } from "@/infra/services/mail-service.js";
-import { prisma } from "@/lib/prisma.js"; // Usando a instância centralizada
+import type { MailService } from "../../infra/services/mail-service.js";
+import { prisma } from "../../lib/prisma.js"; // Usando a instância centralizada
 
 export class NotifyDailyAgendaService {
   // Removido o 'typeof prisma' do construtor para usar a instância global diretamente se preferir, 

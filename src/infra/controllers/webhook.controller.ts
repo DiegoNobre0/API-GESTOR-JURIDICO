@@ -1,5 +1,5 @@
 
-import { prisma } from '@/lib/prisma.js'; // Ajuste o caminho conforme seu projeto
+import { prisma } from '../../lib/prisma.js'; // Ajuste o caminho conforme seu projeto
 
 import type { Conversation } from '@prisma/client'; // Opcional: para tipagem
 import type { FastifyReply, FastifyRequest } from 'fastify';

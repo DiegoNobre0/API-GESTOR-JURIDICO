@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma.js";
+import { prisma } from "../../lib/prisma.js";
 import type { CreateFinanceiroInput } from "./dto/create-financeiro.dto.js";
 
 export class FinanceiroService {

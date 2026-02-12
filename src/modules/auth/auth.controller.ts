@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { AuthService } from "./auth.service.js";
-import { userCreateSchema } from "@/modules/users/dto/user.dto.js"; // Alias ajustado
+import { userCreateSchema } from "../../modules/users/dto/user.dto.js"; // Alias ajustado
 import { loginSchema } from "./dto/login.dto.js";
 
 export class AuthController {

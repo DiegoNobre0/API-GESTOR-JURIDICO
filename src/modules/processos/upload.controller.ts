@@ -1,5 +1,5 @@
 
-import { StorageService } from '@/infra/services/storage.service.js';
+import { StorageService } from '../../infra/services/storage.service.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { extname } from 'node:path';
 

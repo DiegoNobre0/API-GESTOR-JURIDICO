@@ -1,5 +1,5 @@
 
-import { WebhookController } from '@/infra/controllers/webhook.controller.js';
+import { WebhookController } from '../../infra/controllers/webhook.controller.js';
 import type { FastifyInstance } from 'fastify';
 
 export async function webhookModule(app: FastifyInstance) {
