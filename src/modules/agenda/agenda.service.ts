@@ -1,24 +1,41 @@
 import { prisma } from "@/lib/prisma.js";
 
 export class AgendaService {
-  // Criar Compromisso (Audiências, Reuniões)
-  async create(data: any, userId: string) {
+  // Criar Compromisso (Audiência/Reunião)
+  async createCompromisso(data: any, userId: string) {
     return prisma.compromisso.create({
       data: {
         ...data,
-        userId,
+        userId, // Vincula ao ID do advogado logado
       },
+      include: { user: { select: { nome: true } } } // Retorna com o nome do criador
     });
   }
 
-  // MÉTODO ADICIONADO: Criar Tarefa (Checklist)
+  // Criar Tarefa (Petição/Prazo)
+  async createTarefa(data: any, userId: string) {
+    return prisma.tarefa.create({
+      data: {
+        ...data,
+        userId, // Vincula ao ID do advogado logado
+        concluida: false
+      },
+      include: { user: { select: { nome: true } } }
+    });
+  }
+
+  // Criar Tarefa - Vincula o userId automaticamente
   async addTarefa(data: any, userId: string) {
     return prisma.tarefa.create({
       data: {
         ...data,
-        userId,
+        userId, // ID do advogado logado
         concluida: false
       },
+      // Opcional: já retorna com o nome do criador
+      include: {
+        user: { select: { nome: true } }
+      }
     });
   }
 
@@ -30,21 +47,24 @@ export class AgendaService {
     });
   }
 
+  // Listagem Unificada com Nome do Advogado
   async listAll(userId: string) {
-    // Busca paralela para performance máxima no seu Angular 19
     const [compromissos, tarefas] = await Promise.all([
       prisma.compromisso.findMany({
         where: { userId },
         orderBy: { startDate: 'asc' },
+        include: { user: { select: { nome: true } } } // Inclui o nome do User
       }),
       prisma.tarefa.findMany({
         where: { userId, concluida: false },
         orderBy: { createdAt: 'desc' },
+        include: { user: { select: { nome: true } } } // Inclui o nome do User
       }),
     ]);
 
     return { compromissos, tarefas };
   }
+
 
   async delete(id: string) {
     return prisma.compromisso.delete({

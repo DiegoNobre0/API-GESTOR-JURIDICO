@@ -3,7 +3,6 @@ import { ChatbotService } from '@/infra/services/chatbot-service.js';
 import { StorageService } from '@/infra/services/storage.service.js'; // <--- IMPORTANTE
 
 import FormData from 'form-data';
-import fs from 'fs';
 import fetch from 'node-fetch';
 import type { FastifyInstance } from 'fastify';
 import type { IncomingMessage, MetaMessagePayload } from './whatsapp.types.js';
@@ -20,32 +19,6 @@ interface AnaliseDocumento {
     cpf?: string;
   };
 }
-
-
-
-function documentoIdentidadeCompleto(
-  tipo: 'RG' | 'CNH',
-  docs: any[]
-): boolean {
-  const docsDoTipo = docs.filter(d => d.tipo === tipo);
-
-  const temUnico = docsDoTipo.some(
-    d => d.extractedData?.lado === 'FRENTE_E_VERSO'
-  );
-
-  const temFrente = docsDoTipo.some(
-    d => d.extractedData?.lado === 'FRENTE'
-  );
-
-  const temVerso = docsDoTipo.some(
-    d => d.extractedData?.lado === 'VERSO'
-  );
-
-  return temUnico || (temFrente && temVerso);
-}
-
-
-
 
 export class WhatsappService {
   private version = 'v19.0';

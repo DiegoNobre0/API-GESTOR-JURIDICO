@@ -18,9 +18,11 @@ export const createCompromissoSchema = z.object({
 
 // Schema para criação de Tarefas (Checklist do Dr. Diego)
 export const createTarefaSchema = z.object({
-  title: z.string().min(3, "Título da tarefa muito curto"),
-  description: z.string().optional(),
-  concluida: z.boolean().default(false),
+  titulo: z.string().min(3),
+  description: z.string(),
+  responsavel: z.string(), // Texto (quem vai executar)
+  prazo: z.string(),       // String (conforme seu modelo)
+  processoId: z.string().optional().nullable(),
 });
 
 // Inferência de Tipos para uso no Service e Controller

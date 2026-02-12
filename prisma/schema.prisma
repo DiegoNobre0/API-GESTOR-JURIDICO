@@ -87,7 +87,7 @@ model Processo {
   
   // --- DATAS ---
   dataFechamentoContrato DateTime @default(now())
-  dataEstimadaRecebimento String?
+  dataEstimadaRecebimento DateTime?
   
   // --- RELACIONAMENTOS ---
   userId         String   @db.ObjectId
@@ -129,7 +129,7 @@ model Compromisso {
   description String?
   tipo        String   @default("outro")
   concluido   Boolean  @default(false)
-
+  location    String?
   // Relacionamento com User
   userId String @db.ObjectId
   user   User   @relation(fields: [userId], references: [id])

@@ -9,8 +9,7 @@ export class ProcessosService {
   // CRIAR PROCESSO
   // -----------------------------------------------------------------------
   
-
-async create(input: CreateProcessoInput, userId: string) {
+  async create(input: CreateProcessoInput, userId: string) {
     // 1. Regra de Negócio: Duplicidade
     if (input.numeroProcesso) {
       const existe = await prisma.processo.findFirst({ 
@@ -19,39 +18,49 @@ async create(input: CreateProcessoInput, userId: string) {
       if (existe) throw new Error("Já existe um processo com este número.");
     }
 
-    // 2. Entidade
+    // 2. Entidade (Validação de Domínio)
     const entity = new ProcessoEntity(input);
 
-    // 3. Gestão do Cliente (Upsert)
+    // 3. Gestão do Cliente (Upsert Inteligente)
     let clienteIdConectado: string;
 
-    if (entity.props.clienteCpf) {
+    // LÓGICA: Se tem CPF, usa CPF como chave. Se não, usa Telefone.
+    if (input.clienteCpf) {
       const cliente = await prisma.cliente.upsert({
-        where: { cpf: entity.props.clienteCpf },
+        where: { cpf: input.clienteCpf },
         update: {
-          nome: entity.props.clienteNome,
-          email: entity.props.clienteEmail ?? null, 
+          nome: input.clienteNome,
+          email: input.clienteEmail ?? null, 
+          // Opcional: Atualizar telefone se o cliente já existia
+          telefone: input.clienteTelefone 
         },
         create: {
-          nome: entity.props.clienteNome,
-          cpf: entity.props.clienteCpf,
-          email: entity.props.clienteEmail ?? null,
-          telefone: `temp_${Date.now()}_${Math.random().toString(36).substring(7)}`
+          nome: input.clienteNome,
+          cpf: input.clienteCpf,
+          email: input.clienteEmail ?? null,
+          telefone: input.clienteTelefone // <--- USA O TELEFONE REAL
         }
       });
       clienteIdConectado = cliente.id;
     } else {
-      const cliente = await prisma.cliente.create({
-        data: {
-          nome: entity.props.clienteNome,
-          email: entity.props.clienteEmail ?? null,
-          telefone: `temp_${Date.now()}_${Math.random().toString(36).substring(7)}`
+      // Fallback: Busca/Cria pelo Telefone
+      const cliente = await prisma.cliente.upsert({
+        where: { telefone: input.clienteTelefone },
+        update: {
+            nome: input.clienteNome,
+            email: input.clienteEmail ?? null,
+        },
+        create: {
+          nome: input.clienteNome,
+          email: input.clienteEmail ?? null,
+          telefone: input.clienteTelefone, // <--- USA O TELEFONE REAL
+          cpf: null // Sem CPF por enquanto
         }
       });
       clienteIdConectado = cliente.id;
     }
 
-    // 4. Montagem do Payload (CORREÇÃO DO exactOptionalPropertyTypes)
+    // 4. Montagem do Payload
     const prismaData: Prisma.ProcessoCreateInput = {
       // --- CAMPOS OBRIGATÓRIOS ---
       descricaoObjeto: entity.props.descricaoObjeto,
@@ -66,25 +75,36 @@ async create(input: CreateProcessoInput, userId: string) {
       clienteNome: entity.props.clienteNome,
 
       // --- CAMPOS OPCIONAIS (NULLABLE) ---
-      // Aqui usamos ?? null porque o campo no banco aceita NULL
       clienteCpf: entity.props.clienteCpf ?? null,
       clienteEmail: entity.props.clienteEmail ?? null,
       numeroProcesso: entity.props.numeroProcesso ?? null,
       basePrevisao: entity.props.basePrevisao ?? null,
       dataEstimadaRecebimento: entity.props.dataEstimadaRecebimento ?? null,
 
-      // --- CAMPOS COM DEFAULT (CORREÇÃO DA SUA DÚVIDA) ---
-      // Se numeroInterno for nulo/undefined, NÃO colocamos a chave no objeto.
-      // Se tiver valor, colocamos. Isso evita o erro de "undefined is not assignable to string".
+      // --- CAMPOS COM DEFAULT ---
       ...(entity.props.numeroInterno ? { numeroInterno: entity.props.numeroInterno } : {}),
 
       // --- CONEXÕES ---
       cliente: { connect: { id: clienteIdConectado } },
-      user: { connect: { id: userId } }
+      user: { connect: { id: userId } },
+
+      // --- ARQUIVOS (NOVO) ---
+      // Cria os arquivos vinculados na tabela processo_arquivos atomicamente
+      arquivos: {
+        create: input.arquivos?.map(arq => ({
+            tipo: arq.tipo,
+            url: arq.url,
+            nomeArquivo: arq.nomeArquivo
+        })) || []
+      }
     };
 
-    return await prisma.processo.create({ data: prismaData });
-}
+    // Retorna o processo criado já incluindo os arquivos para confirmação visual
+    return await prisma.processo.create({ 
+        data: prismaData,
+        include: { arquivos: true } 
+    });
+  }
 
   // -----------------------------------------------------------------------
   // OUTROS MÉTODOS
@@ -100,12 +120,14 @@ async create(input: CreateProcessoInput, userId: string) {
   async findById(id: string, userId: string) {
     return await prisma.processo.findFirst({ 
       where: { id, userId },
-      include: { cliente: true }
+      include: { 
+          cliente: true,
+          arquivos: true // <--- Incluímos os arquivos na busca
+      }
     });
   }
 
   async setArquivado(id: string, userId: string, status: boolean) {
-    // Agora que adicionamos dataArquivamento no schema, isso vai funcionar
     return await prisma.processo.updateMany({
       where: { id, userId },
       data: { 
@@ -115,12 +137,12 @@ async create(input: CreateProcessoInput, userId: string) {
     });
   }
 
-  // ... (métodos update, listAndamentos e createAndamento seguem a mesma lógica)
   async update(id: string, userId: string, input: any) {
     const processo = await prisma.processo.findFirst({ where: { id, userId } });
     if (!processo) throw new Error("Processo não encontrado.");
 
     const dataToUpdate = { ...input };
+    // Remove campos undefined para não sobrescrever com null acidentalmente
     Object.keys(dataToUpdate).forEach((key) => {
       if (dataToUpdate[key] === undefined) delete dataToUpdate[key];
     });
@@ -134,6 +156,7 @@ async create(input: CreateProcessoInput, userId: string) {
   async listAndamentos(processoId: string, userId: string) {
     const processo = await prisma.processo.findFirst({ where: { id: processoId, userId } });
     if (!processo) throw new Error("Processo não encontrado.");
+    
     return await prisma.andamento.findMany({
       where: { processoId },
       orderBy: { createdAt: 'desc' },

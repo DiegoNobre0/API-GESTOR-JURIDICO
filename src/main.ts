@@ -13,7 +13,7 @@ import { MailService } from "@/infra/services/mail-service.js";
 import { authModule } from '@/modules/auth/auth.module.js';
 import { dashboardModule } from '@/modules/dashboard/dashboard.module.js';
 import { processosModule } from '@/modules/processos/processos.module.js';
-import { financeiroModule } from '@/modules/financeiro/financeiro.module.js';
+
 
 import { usersModule } from './modules/users/users.module.js';
 
@@ -21,6 +21,10 @@ import { usersModule } from './modules/users/users.module.js';
 import { NotifyDailyAgendaService } from './modules/agenda/notify-daily-agenda.service.js';
 import { whatsappModule } from './modules/whatsapp/whatsapp.module.js';
 import { webhookModule } from './infra/controllers/webhook.module.js';
+import { leadsModule } from './modules/leads/leads.module.js';
+import { uploadRoutes } from './modules/processos/upload.controller.js';
+import { clientesRoutes } from './modules/cliente/clientes.module.js';
+import { financeiroModule } from './modules/financeiro/financeiro.module.js';
 
 const app = Fastify({ logger: true });
 
@@ -69,6 +73,9 @@ app.register(financeiroModule);
 app.register(usersModule);
 app.register(whatsappModule); // O WhatsApp usará o multipart configurado acima
 app.register(webhookModule);
+app.register(leadsModule, { prefix: 'leads' }); // Módulo de Leads (novo) - REGISTRE APENAS AQUI, SEM PREFIXO, PARA FICAR EM /leads
+app.register(uploadRoutes);
+app.register(clientesRoutes, { prefix: 'clientes' });
 
 // --- 3. AGENDADORES (CRON JOBS) ---
 const mailService = new MailService();

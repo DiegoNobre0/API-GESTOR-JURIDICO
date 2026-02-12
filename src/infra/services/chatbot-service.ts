@@ -2,15 +2,13 @@ import { generateText, tool } from 'ai';
 import { groq } from '@ai-sdk/groq';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma.js';
-import type { FinanceiroService } from '@/modules/financeiro/financeiro.service.js';
+
 import { ZapSignService } from './zapsign-service.js';
-import { ConversationPolicy } from './policy/conversation-policy.js';
+
 import { DocumentExceptionPolicy } from './policy/document-exception-policy.js';
 import { detectGreeting } from './policy/greeting.util.js';
 import type { ModelMessage } from 'ai';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-// import Groq from 'groq-sdk';
-import { File } from 'node:buffer';
+
 
 
 /* ---------------------------------
