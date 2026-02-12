@@ -33,7 +33,7 @@ app.register(fastifyJwt, {
 
 app.register(cors, {
   origin: process.env.NODE_ENV === 'production' 
-    ? ["https://seu-front-nobre.vercel.app"] 
+    ? ["https://gestor-juridico-front.vercel.app"] 
     : true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
