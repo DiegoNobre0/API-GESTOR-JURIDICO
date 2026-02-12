@@ -3,7 +3,6 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import fastifyJwt from "@fastify/jwt";
 import multipart from '@fastify/multipart'; // Importação agrupada
-import fastifySocketIO from 'fastify-socket.io';
 import cron from 'node-cron';
 
 // Instâncias Globais e Módulos
@@ -51,13 +50,7 @@ app.register(multipart, {
   }
 });
 
-// Socket.io (Tempo Real)
-app.register(fastifySocketIO as any, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]   
-  }
-});
+
 
 // Decorator de Autenticação
 app.decorate("authenticate", async (request: any, reply: any) => {
