@@ -37,8 +37,11 @@ app.register(fastifyJwt, {
 
 // CORS
 app.register(cors, {
-  origin: true, // Em produção, troque "true" pela URL do front (ex: "http://localhost:4200")
-  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], // Permite o PUT
+  // Se for produção (Vercel), use a URL do seu Angular. Se for local, permite tudo.
+  origin: process.env.NODE_ENV === 'production' 
+    ? ["https://seu-front-nobre.vercel.app"] 
+    : true,
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 });
 // Multipart (Uploads) - REGISTRE APENAS UMA VEZ AQUI
@@ -77,6 +80,19 @@ app.register(leadsModule, { prefix: 'leads' }); // Módulo de Leads (novo) - REG
 app.register(uploadRoutes);
 app.register(clientesRoutes, { prefix: 'clientes' });
 
+
+app.get('/api/cron/notify-agenda', async (req, reply) => {
+  // Verificação de segurança simples (opcional mas recomendada)
+  const authHeader = req.headers['authorization'];
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return reply.status(401).send('Não autorizado');
+  }
+
+  app.log.info("📅 [CRON] Iniciando notificações...");
+  const notifyService = new NotifyDailyAgendaService(mailService);
+  await notifyService.execute();
+  return { success: true };
+});
 // --- 3. AGENDADORES (CRON JOBS) ---
 const mailService = new MailService();
 
@@ -91,15 +107,25 @@ cron.schedule('0 18 * * *', async () => {
   }
 });
 
-// --- 4. START SERVER ---
-const start = async () => {
-  try {
-    await app.listen({ port: 3333, host: '0.0.0.0' });
-    console.log("🚀 RCS Advogados - Backend 2.0 Rodando na porta 3333");
-  } catch (err) {
-    app.log.error(err);
-    process.exit(1);
-  }
-};
+//--- 4. START SERVER (Ajustado para Vercel/Local) ---
 
-start();
+// Se estiver rodando localmente (fora da Vercel), o app.listen funciona
+if (process.env.NODE_ENV !== 'production') {
+  const start = async () => {
+    try {
+      await app.listen({ port: 3333, host: '0.0.0.0' });
+      console.log("🚀 RCS Advogados - Backend 2.0 Rodando localmente na porta 3333");
+    } catch (err) {
+      app.log.error(err);
+      process.exit(1);
+    }
+  };
+  start();
+}
+
+// --- 5. EXPORT PARA VERCEL (AQUI!) ---
+// Isso permite que a Vercel trate seu Fastify como uma Serverless Function
+export default async (req: any, res: any) => {
+  await app.ready();
+  app.server.emit('request', req, res);
+};

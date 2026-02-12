@@ -469,7 +469,7 @@ Agora um advogado irá analisar seu caso e entrar em contato com você.
     const result = await generateText({
       model: groq('llama-3.3-70b-versatile'),
       system: this.buildSystemPrompt(buildContext(conversation)),
-      messages,
+      messages,     
       tools: {
         atualizarEtapa: atualizarEtapaTool,
         registrarFatos: registrarFatosTool,
@@ -978,7 +978,7 @@ Agora, responda à última mensagem do cliente seguindo estas diretrizes.
     const { text } = await generateText({
       model: groq('llama-3.3-70b-versatile'),
       temperature: 0.3, // Temperatura baixa para ser obediente
-      system,
+      system,      
       prompt: mensagemInstrucao, // Envia a instrução forte em vez do JSON simples
     });
 
