@@ -1,45 +1,39 @@
 import { prisma } from "../../lib/prisma.js";
 
 export class AgendaService {
-  // Criar Compromisso (Audiência/Reunião)
+
+  // ✅ FUNÇÃO LIMPA: Se o campo vier vazio, converte para undefined
+  private formatarProcessoId(id?: string) {
+    const limpo = id?.trim();
+    return limpo ? limpo : undefined;
+  }
+
+  // Criar Compromisso
   async createCompromisso(data: any, userId: string) {
     return prisma.compromisso.create({
       data: {
         ...data,
-        userId, // Vincula ao ID do advogado logado
+        processoId: this.formatarProcessoId(data.processoId), 
+        userId,
       },
-      include: { user: { select: { nome: true } } } // Retorna com o nome do criador
+      include: { user: { select: { nome: true } } }
     });
   }
 
-  // Criar Tarefa (Petição/Prazo)
-  async createTarefa(data: any, userId: string) {
+  // Criar Tarefa
+  async addTarefa(data: any, userId: string) {
     return prisma.tarefa.create({
       data: {
         ...data,
-        userId, // Vincula ao ID do advogado logado
+        processoId: this.formatarProcessoId(data.processoId), 
+        userId, 
         concluida: false
       },
       include: { user: { select: { nome: true } } }
     });
   }
 
-  // Criar Tarefa - Vincula o userId automaticamente
-  async addTarefa(data: any, userId: string) {
-    return prisma.tarefa.create({
-      data: {
-        ...data,
-        userId, // ID do advogado logado
-        concluida: false
-      },
-      // Opcional: já retorna com o nome do criador
-      include: {
-        user: { select: { nome: true } }
-      }
-    });
-  }
-
-  // MÉTODO ADICIONADO: Concluir Tarefa
+  // Concluir Tarefa
   async completeTarefa(id: string) {
     return prisma.tarefa.update({
       where: { id },
@@ -47,24 +41,23 @@ export class AgendaService {
     });
   }
 
-  // Listagem Unificada com Nome do Advogado
+  // Listagem Unificada
   async listAll(userId: string) {
     const [compromissos, tarefas] = await Promise.all([
       prisma.compromisso.findMany({
         where: { userId },
         orderBy: { startDate: 'asc' },
-        include: { user: { select: { nome: true } } } // Inclui o nome do User
+        include: { user: { select: { nome: true } } }
       }),
       prisma.tarefa.findMany({
         where: { userId, concluida: false },
         orderBy: { createdAt: 'desc' },
-        include: { user: { select: { nome: true } } } // Inclui o nome do User
+        include: { user: { select: { nome: true } } }
       }),
     ]);
 
     return { compromissos, tarefas };
   }
-
 
   async delete(id: string) {
     return prisma.compromisso.delete({

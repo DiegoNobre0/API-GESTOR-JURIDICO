@@ -79,7 +79,7 @@ export async function processosModule(app: FastifyInstance) {
     });
 
     group.post("/gerar-pela-conversa/:id", (req, rep) => controller.gerarPelaConversa(req, rep));
-
+    group.post('/zapsign/gerar', (req, res) => controller.gerarZapSign(req, res));
     // Arquivar/Desarquivar
     group.put("/:id/arquivar", async (req) => service.setArquivado((req.params as any).id, req.user.sub, true));
     group.put("/:id/desarquivar", async (req) => service.setArquivado((req.params as any).id, req.user.sub, false));

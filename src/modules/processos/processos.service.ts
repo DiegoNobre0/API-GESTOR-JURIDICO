@@ -2,18 +2,23 @@ import { prisma } from "../../lib/prisma.js";
 import { Prisma } from "@prisma/client";
 import { ProcessoEntity } from "./entities/processo.entity.js";
 import type { CreateProcessoInput } from "./dto/create-processo.dto.js";
+import { ZapSignService } from "@/infra/services/zapsign-service.js";
+// 👇 IMPORTAÇÃO DO ZAPSIGN (ajuste o caminho se necessário)
+
+
+const zapSignService = new ZapSignService();
 
 export class ProcessosService {
-  
+
   // -----------------------------------------------------------------------
   // CRIAR PROCESSO
   // -----------------------------------------------------------------------
-  
+
   async create(input: CreateProcessoInput, userId: string) {
     // 1. Regra de Negócio: Duplicidade
     if (input.numeroProcesso) {
-      const existe = await prisma.processo.findFirst({ 
-        where: { numeroProcesso: input.numeroProcesso } 
+      const existe = await prisma.processo.findFirst({
+        where: { numeroProcesso: input.numeroProcesso }
       });
       if (existe) throw new Error("Já existe um processo com este número.");
     }
@@ -24,43 +29,82 @@ export class ProcessosService {
     // 3. Gestão do Cliente (Upsert Inteligente)
     let clienteIdConectado: string;
 
-    // LÓGICA: Se tem CPF, usa CPF como chave. Se não, usa Telefone.
     if (input.clienteCpf) {
       const cliente = await prisma.cliente.upsert({
         where: { cpf: input.clienteCpf },
         update: {
           nome: input.clienteNome,
-          email: input.clienteEmail ?? null, 
-          // Opcional: Atualizar telefone se o cliente já existia
-          telefone: input.clienteTelefone 
+          email: input.clienteEmail ?? null,
+          telefone: input.clienteTelefone
         },
         create: {
           nome: input.clienteNome,
           cpf: input.clienteCpf,
           email: input.clienteEmail ?? null,
-          telefone: input.clienteTelefone // <--- USA O TELEFONE REAL
+          telefone: input.clienteTelefone 
         }
       });
       clienteIdConectado = cliente.id;
     } else {
-      // Fallback: Busca/Cria pelo Telefone
       const cliente = await prisma.cliente.upsert({
         where: { telefone: input.clienteTelefone },
         update: {
-            nome: input.clienteNome,
-            email: input.clienteEmail ?? null,
+          nome: input.clienteNome,
+          email: input.clienteEmail ?? null,
         },
         create: {
           nome: input.clienteNome,
           email: input.clienteEmail ?? null,
-          telefone: input.clienteTelefone, // <--- USA O TELEFONE REAL
-          cpf: null // Sem CPF por enquanto
+          telefone: input.clienteTelefone,
+          cpf: null 
         }
       });
       clienteIdConectado = cliente.id;
     }
 
-    // 4. Montagem do Payload
+    // 👇 4. INTEGRAÇÃO ZAPSIGN (Geração Automática de Contratos)
+    // Preparamos a lista de arquivos que vieram do frontend
+    const arquivosParaSalvar = input.arquivos?.map(arq => ({
+      tipo: arq.tipo,
+      url: arq.url,
+      nomeArquivo: arq.nomeArquivo
+    })) || [];
+
+    // Se o frontend pediu para gerar os documentos (clicou no botão)
+    if (input.gerarDocumentosZapSign) {
+      const dadosParaDocumento = {
+        nome: input.clienteNome,
+        cpf: input.clienteCpf,
+        telefone: input.clienteTelefone,
+        endereco: "Endereço pendente" // Opcional: Pegar do formulário depois se quiser
+      };
+
+      // Gera Contrato
+      const contrato = await zapSignService.gerarDocumento(
+        dadosParaDocumento,
+        "65194d71-ad5d-4192-a2b2-5838f664a6dc", // ID do Modelo do Contrato
+        `Contrato - ${input.clienteNome}`
+      );
+      if (contrato) arquivosParaSalvar.push({
+          tipo: "CONTRATO",
+          nomeArquivo: contrato.nomeArquivo,
+          url: contrato.url
+      });
+
+      // Gera Procuração
+      const procuracao = await zapSignService.gerarDocumento(
+        dadosParaDocumento,
+        "52151f47-c845-45a7-beae-6cd1042d5ecb", // ID do Modelo da Procuração
+        `Procuração - ${input.clienteNome}`
+      );
+      if (procuracao) arquivosParaSalvar.push({
+          tipo: "PROCURAÇÃO",
+          nomeArquivo: procuracao.nomeArquivo,
+          url: procuracao.url
+      });
+    }
+
+    // 5. Montagem do Payload do Prisma
     const prismaData: Prisma.ProcessoCreateInput = {
       // --- CAMPOS OBRIGATÓRIOS ---
       descricaoObjeto: entity.props.descricaoObjeto,
@@ -81,33 +125,30 @@ export class ProcessosService {
       basePrevisao: entity.props.basePrevisao ?? null,
       dataEstimadaRecebimento: entity.props.dataEstimadaRecebimento ?? null,
 
-      // --- CAMPOS COM DEFAULT ---
+      // 👇 VINCULAÇÃO COM O CHAT DO WHATSAPP AQUI
+      ...(input.conversationId ? { conversation: { connect: { id: input.conversationId } } } : {}),
+
       ...(entity.props.numeroInterno ? { numeroInterno: entity.props.numeroInterno } : {}),
 
       // --- CONEXÕES ---
       cliente: { connect: { id: clienteIdConectado } },
       user: { connect: { id: userId } },
 
-      // --- ARQUIVOS (NOVO) ---
-      // Cria os arquivos vinculados na tabela processo_arquivos atomicamente
+      // --- ARQUIVOS ---
+      // Salva os arquivos (Uploads normais + Links do ZapSign)
       arquivos: {
-        create: input.arquivos?.map(arq => ({
-            tipo: arq.tipo,
-            url: arq.url,
-            nomeArquivo: arq.nomeArquivo
-        })) || []
+        create: arquivosParaSalvar
       }
     };
 
-    // Retorna o processo criado já incluindo os arquivos para confirmação visual
-    return await prisma.processo.create({ 
-        data: prismaData,
-        include: { arquivos: true } 
+    return await prisma.processo.create({
+      data: prismaData,
+      include: { arquivos: true }
     });
   }
 
   // -----------------------------------------------------------------------
-  // OUTROS MÉTODOS
+  // OUTROS MÉTODOS (Mantidos intactos)
   // -----------------------------------------------------------------------
   async list(userId: string, arquivado = false) {
     return await prisma.processo.findMany({
@@ -118,11 +159,14 @@ export class ProcessosService {
   }
 
   async findById(id: string, userId: string) {
-    return await prisma.processo.findFirst({ 
+    return await prisma.processo.findFirst({
       where: { id, userId },
-      include: { 
-          cliente: true,
-          arquivos: true // <--- Incluímos os arquivos na busca
+      include: {
+        cliente: true,
+        arquivos: true,
+        conversation: {
+          select: { id: true }
+        }
       }
     });
   }
@@ -130,9 +174,9 @@ export class ProcessosService {
   async setArquivado(id: string, userId: string, status: boolean) {
     return await prisma.processo.updateMany({
       where: { id, userId },
-      data: { 
-        arquivado: status, 
-        dataArquivamento: status ? new Date() : null 
+      data: {
+        arquivado: status,
+        dataArquivamento: status ? new Date() : null
       }
     });
   }
@@ -142,7 +186,6 @@ export class ProcessosService {
     if (!processo) throw new Error("Processo não encontrado.");
 
     const dataToUpdate = { ...input };
-    // Remove campos undefined para não sobrescrever com null acidentalmente
     Object.keys(dataToUpdate).forEach((key) => {
       if (dataToUpdate[key] === undefined) delete dataToUpdate[key];
     });
@@ -156,7 +199,7 @@ export class ProcessosService {
   async listAndamentos(processoId: string, userId: string) {
     const processo = await prisma.processo.findFirst({ where: { id: processoId, userId } });
     if (!processo) throw new Error("Processo não encontrado.");
-    
+
     return await prisma.andamento.findMany({
       where: { processoId },
       orderBy: { createdAt: 'desc' },

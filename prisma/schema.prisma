@@ -20,6 +20,14 @@ model User {
   cpf      String?
   telefone String?
 
+  // --- NOVOS CAMPOS PARA CONFIGURAÇÕES ---
+  numeroOab          String?
+  estadoOab          String?
+  notificarAgenda    Boolean @default(true)
+  notificarPje       Boolean @default(true)
+  horarioNotificacao String  @default("07:00")
+  ativo              Boolean @default(true) // Para o toggle de Status na tabela
+
   // Relacionamentos Reais (Back-references)
   processos          Processo[]
   compromissos       Compromisso[]
@@ -95,6 +103,11 @@ model Processo {
   
   andamentos     Andamento[]
   arquivos       ProcessoArquivo[] // Relação com os arquivos
+
+
+  // --- VINCULAÇÃO COM CONVERSA (WHATSAPP) ---
+  conversationId  String?       @db.ObjectId
+  conversation    Conversation? @relation(fields: [conversationId], references: [id])
   
   dataArquivamento DateTime?
   arquivado      Boolean  @default(false)
@@ -134,7 +147,7 @@ model Compromisso {
   userId String @db.ObjectId
   user   User   @relation(fields: [userId], references: [id])
 
-  processoId String?  @db.ObjectId
+  processoId String?  
   createdAt  DateTime @default(now())
 
   @@map("compromissos")
@@ -142,7 +155,7 @@ model Compromisso {
 
 model Tarefa {
   id          String  @id @default(auto()) @map("_id") @db.ObjectId
-  processoId  String? @db.ObjectId
+  processoId  String? 
   titulo      String
   description String
   responsavel String
@@ -247,7 +260,7 @@ model Conversation {
   // Relacionamento com Mensagens
   messages  Message[]
   documents ConversationDocument[]
-
+  processos       Processo[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   presentedAt DateTime?

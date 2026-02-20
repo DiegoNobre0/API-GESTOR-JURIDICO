@@ -1,44 +1,58 @@
 import axios from 'axios';
 
 export class ZapSignService {
-  // ⚠️ Adicione ZAPSIGN_TOKEN no seu .env
-  private token = process.env.ZAPSIGN_TOKEN; 
-  private apiUrl = 'https://api.zapsign.com.br/api/v1';
 
-  async criarContrato(nomeCliente: string, templateId: string, emailCliente: string = 'email@padrao.com') {
+  private readonly apiUrl = 'https://api.zapsign.com.br/api/v1';
+  // private readonly apiUrl = 'https://sandbox.api.zapsign.com.br/api/v1';
+  private readonly apiToken = process.env.ZAPSIGN_TOKEN!;
+
+  async gerarDocumento(dados: any, modeloId: string, nomeArquivo: string) {
+    axios.get(
+  'https://api.zapsign.com.br/api/v1/docs/',
+  {
+    headers: {
+      Authorization: `Token ${process.env.ZAPSIGN_TOKEN}`
+    }
+  }
+)
+.then(res => console.log("OK", res.data))
+.catch(err => console.log("ERRO", err.response?.data));
     try {
-      const payload = {
-        template_id: templateId,
-        signer_name: nomeCliente,
-        send_automatic_email: false,
-        send_automatic_whatsapp: false,
-        lang: "pt-br",
-        signers: [
-          {
-            name: nomeCliente,
-            email: emailCliente,
-            auth_mode: "assinaturaTela",
-            send_automatic_email: false,
-            send_automatic_whatsapp: false
+      const response = await axios.post(
+        `${this.apiUrl}/models/create-doc/`,
+        {
+          sandbox: true, // 👈 importante para ambiente de testes
+          template_id: modeloId,
+          signer_name: dados.nome,
+          send_automatic_email: false,
+          send_automatic_whatsapp: false,
+          lang: "pt-br",
+          external_id: `proc-${Date.now()}`, // 👈 importante para rastrear no seu sistema
+          data: [
+            { de: "{{NOME COMPLETO}}", para: dados.nome },
+            { de: "{{NÚMERO DO CPF}}", para: dados.cpf },
+            { de: "{{ENDEREÇO COMPLETO}}", para: dados.endereco }
+          ]
+        },
+        {
+          headers: {
+            Authorization: `Token ${this.apiToken}`,
+            "Content-Type": "application/json"
           }
-        ]
-      };
-
-      const response = await axios.post(`${this.apiUrl}/models/create-doc/`, payload, {
-        headers: { 
-            'Authorization': `Bearer ${this.token}`,
-            'Content-Type': 'application/json'
         }
-      });
+      );
 
       return {
-        docId: response.data.doc_token,
-        linkAssinatura: response.data.signers[0].sign_url
+        id: response.data.id,
+        tipo: 'ZAPSIGN',
+        nomeArquivo,
+        url: response.data.signers[0].sign_url,
+        status: response.data.status
       };
 
     } catch (error: any) {
-      console.error('Erro ZapSign:', error.response?.data || error.message);
-      throw new Error('Falha ao gerar contrato na ZapSign');
+      console.error("Erro ZapSign:", error.response?.data || error.message);
+      return null;
     }
   }
 }

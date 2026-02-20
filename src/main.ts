@@ -4,17 +4,17 @@ import cors from "@fastify/cors";
 import fastifyJwt from "@fastify/jwt";
 import multipart from '@fastify/multipart';
 import cron from 'node-cron';
+import { createServer } from 'http';
+import { Server as SocketIOServer } from 'socket.io';
 
-// --- IMPORTAÇÕES COM CAMINHOS RELATIVOS (CORRIGIDO) ---
-import { prisma } from "./lib/prisma.js"; 
+// --- IMPORTAÇÕES ---
+import { prisma } from "./lib/prisma.js";
 import { MailService } from './infra/services/mail-service.js';
 
 import { authModule } from './modules/auth/auth.module.js';
 import { dashboardModule } from './modules/dashboard/dashboard.module.js';
 import { processosModule } from './modules/processos/processos.module.js';
 import { usersModule } from './modules/users/users.module.js';
-
-// Serviços e Módulos
 import { NotifyDailyAgendaService } from './modules/agenda/notify-daily-agenda.service.js';
 import { whatsappModule } from './modules/whatsapp/whatsapp.module.js';
 import { webhookModule } from './infra/controllers/webhook.module.js';
@@ -22,18 +22,21 @@ import { leadsModule } from './modules/leads/leads.module.js';
 import { uploadRoutes } from './modules/processos/upload.controller.js';
 import { clientesRoutes } from './modules/cliente/clientes.module.js';
 import { financeiroModule } from './modules/financeiro/financeiro.module.js';
+import { agendaRoutes } from './modules/agenda/agenda.routes.js';
 
 const app = Fastify({ logger: true });
 
-// --- 1. PLUGINS GLOBAIS ---
+/* =======================================================
+   1️⃣ PLUGINS
+======================================================= */
 
 app.register(fastifyJwt, {
   secret: process.env.JWT_SECRET || 'secret-2026'
 });
 
 app.register(cors, {
-  origin: process.env.NODE_ENV === 'production' 
-    ? ["https://gestor-juridico-front.vercel.app"] 
+  origin: process.env.NODE_ENV === 'production'
+    ? ["https://gestor-juridico-front.vercel.app"]
     : true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
@@ -48,12 +51,15 @@ app.register(multipart, {
 app.decorate("authenticate", async (request: any, reply: any) => {
   try {
     await request.jwtVerify();
-  } catch (err) {
+  } catch {
     reply.status(401).send({ message: "Sessão expirada ou inválida." });
   }
 });
 
-// --- 2. REGISTRO DE MÓDULOS ---
+/* =======================================================
+   2️⃣ MÓDULOS
+======================================================= */
+
 app.register(authModule);
 app.register(dashboardModule);
 app.register(processosModule);
@@ -63,23 +69,13 @@ app.register(whatsappModule);
 app.register(webhookModule);
 app.register(leadsModule, { prefix: 'leads' });
 app.register(uploadRoutes);
+app.register(agendaRoutes);
 app.register(clientesRoutes, { prefix: 'clientes' });
 
-// Rota de Cron para Vercel
-app.get('/api/cron/notify-agenda', async (req, reply) => {
-  const authHeader = req.headers['authorization'];
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return reply.status(401).send('Não autorizado');
-  }
+/* =======================================================
+   3️⃣ CRON LOCAL
+======================================================= */
 
-  const mailService = new MailService();
-  app.log.info("📅 [CRON] Iniciando notificações...");
-  const notifyService = new NotifyDailyAgendaService(mailService);
-  await notifyService.execute();
-  return { success: true };
-});
-
-// --- 3. AGENDADORES (LOCAL APENAS) ---
 const mailService = new MailService();
 
 cron.schedule('0 18 * * *', async () => {
@@ -87,27 +83,48 @@ cron.schedule('0 18 * * *', async () => {
   const notifyService = new NotifyDailyAgendaService(mailService);
   try {
     await notifyService.execute();
-  } catch (err : any) {
+  } catch (err: any) {
     app.log.error("❌ Falha no scheduler local:", err);
   }
 });
 
-// --- 4. START SERVER (MODO LOCAL) ---
-if (process.env.NODE_ENV !== 'production') {
-  const start = async () => {
-    try {
-      await app.listen({ port: 3333, host: '0.0.0.0' });
-      console.log("🚀 RCS Advogados - Rodando localmente na porta 3333");
-    } catch (err) {
-      app.log.error(err);
-      process.exit(1);
-    }
-  };
-  start();
+/* =======================================================
+   4️⃣ START SERVER COM SOCKET (VPS)
+======================================================= */
+
+/* =======================================================
+   4️⃣ START SERVER COM SOCKET (VPS)
+======================================================= */
+
+async function start() {
+  try {
+    // 1. Instancie o Socket.io usando o servidor interno do Fastify (app.server)
+    const io = new SocketIOServer(app.server, {
+      cors: {
+        origin: '*', // depois coloque domínio do front
+      },
+    });
+
+    // 2. Disponibilize o 'io' dentro do Fastify ANTES de iniciar a aplicação
+    app.decorate('io', io);
+
+    // 3. Configure os eventos do Socket
+    io.on('connection', (socket) => {
+      console.log('🟢 Cliente conectado:', socket.id);
+
+      socket.on('disconnect', () => {
+        console.log('🔴 Cliente desconectado:', socket.id);
+      });
+    });
+
+    // 4. Inicie o Fastify. O método listen já lida com a preparação interna.
+    await app.listen({ port: 3333, host: '0.0.0.0' });
+    console.log("🚀 RCS Advogados rodando com Socket na porta 3333");
+
+  } catch (err) {
+    app.log.error(err);
+    process.exit(1);
+  }
 }
 
-// --- 5. EXPORT PARA VERCEL ---
-export default async (req: any, res: any) => {
-  await app.ready();
-  app.server.emit('request', req, res);
-};
+start();

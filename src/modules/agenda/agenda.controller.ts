@@ -8,10 +8,11 @@ export class AgendaController {
 
   // Criar Compromisso (Audiências, Reuniões)
   async create(request: FastifyRequest, reply: FastifyReply) {
-    const userId = request.user.sub; // Sem 'as string' graças ao @types
+    const userId = request.user.sub; 
     const data = createCompromissoSchema.parse(request.body);
 
-    const compromisso = await this.agendaService.create(data, userId);
+    // ✅ CORREÇÃO: Mudar de .create para .createCompromisso
+    const compromisso = await this.agendaService.createCompromisso(data, userId);
     return reply.status(201).send(compromisso);
   }
 

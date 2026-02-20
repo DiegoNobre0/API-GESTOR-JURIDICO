@@ -25,6 +25,9 @@ export class NotifyDailyAgendaService {
           gte: amanha,
           lt: depoisDeAmanha,
         },
+        user: { 
+          notificarAgenda: true 
+        }
       },
       include: { 
         user: true // Essencial para pegar o e-mail e nome do Dr.
@@ -50,7 +53,7 @@ export class NotifyDailyAgendaService {
       const listaHtml = itens
         .map((i) => `
           <li style="margin-bottom: 8px;">
-            <strong style="color: #2c3e50;">${new Date(i.startDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</strong> - ${i.title}
+            <strong style="color: #2c3e50;">${new Date(i.startDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</strong> - ${i.titulo}
           </li>
         `)
         .join('');

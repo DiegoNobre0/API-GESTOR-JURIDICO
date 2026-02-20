@@ -145,7 +145,7 @@ async function classificarTipoCasoPorFatos(fatos: {
 }): Promise<TipoCaso> {
   const { text } = await generateText({
     model: groq('llama-3.3-70b-versatile'),
-    temperature: 0,
+    temperature: 0.3,
     system: `
 Você é um classificador jurídico.
 Com base nos fatos fornecidos, classifique o tipo do caso.
@@ -259,11 +259,7 @@ const CHECKLISTS: Record<TipoCaso, DocumentoChecklist[]> = {
 
 export class ChatbotService {
   private zapSignService = new ZapSignService();
-
-  //  private groqClient = new Groq({
-  //   apiKey: process.env.GROQ_API_KEY!,
-  // });
-
+  
   constructor() { }
 
   async chat(message: string, customerPhone: string) {

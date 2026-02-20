@@ -1089,24 +1089,26 @@ Seja claro e direto.
     return data.id;
   }
 
-  private async callMetaApi(endpoint: string, method: string, body: any) {
-    const res = await fetch(`${this.baseUrl}${endpoint}`, {
-      method,
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
-    });
+ private async callMetaApi(endpoint: string, method: string, body: any) {
+  const res = await fetch(`${this.baseUrl}${endpoint}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${this.token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
 
-    const json = await res.json();
+  const json = await res.json(); // 🔥 LÊ UMA ÚNICA VEZ
 
-    if (!res.ok) {
-      console.error('❌ ERRO META:', json);
-    }
-
-    return res.json();
+  if (!res.ok) {
+    console.error('❌ ERRO META:', json);
+    throw new Error(JSON.stringify(json));
   }
+
+  return json; // ✅ retorna o mesmo objeto já lido
+}
+
 
   async markAsRead(messageId: string) {
     await this.callMetaApi('/messages', 'POST', {

@@ -1,12 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { AuthController } from "./auth.controller.js";
 import { AuthService } from "./auth.service.js";
-import { PrismaUserRepository } from "../users/repositories/prisma-user.repository.js";
 import { prisma } from "../../lib/prisma.js";
+import { UserController } from "../users/users.controller.js";
 
 export async function authModule(app: FastifyInstance) {
   // 1. Criamos o repositório passando o prisma
-  const userRepository = new PrismaUserRepository(prisma);
+  const userRepository = new UserController(prisma);
   
   // 2. Passamos o repositório para o service
   const authService = new AuthService(userRepository);

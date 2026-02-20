@@ -24,5 +24,5 @@ export async function agendaRoutes(app: FastifyInstance) {
     // DELETE: Remoção de compromissos
     group.delete('/compromisso/:id', (req, res) => controller.delete(req, res));
 
-  });
+  }, { prefix: '/agenda' });
 }

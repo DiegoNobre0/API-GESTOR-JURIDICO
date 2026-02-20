@@ -40,6 +40,7 @@
     "node-fetch": "^3.3.2",
     "nodemailer": "^7.0.13",
     "playwright": "^1.58.1",
+    "socket.io": "^4.8.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {
