@@ -8,6 +8,7 @@ import { ZapSignService } from './zapsign-service.js';
 import { DocumentExceptionPolicy } from './policy/document-exception-policy.js';
 import { detectGreeting } from './policy/greeting.util.js';
 import type { ModelMessage } from 'ai';
+import { AdvogadoAssistantService } from './advogado-assistant.service.js';
 
 
 
@@ -259,7 +260,7 @@ const CHECKLISTS: Record<TipoCaso, DocumentoChecklist[]> = {
 
 export class ChatbotService {
   private zapSignService = new ZapSignService();
-  
+
   constructor() { }
 
   async chat(message: string, customerPhone: string) {
@@ -286,6 +287,45 @@ export class ChatbotService {
       });
 
       return "♻️ *Histórico resetado!* Seus dados e documentos foram apagados. Você já pode enviar um 'Oi' para iniciar um novo teste.";
+    }
+
+    // ====================================================================
+    // NOVO: BLOCO DO ADVOGADO (ADMIN ROUTER)
+    // Verifica se o número do remetente pertence a um Advogado cadastrado
+    // ====================================================================
+
+    // Limpa o número para comparar apenas os dígitos (ex: 5511999999999)
+    // 1. Limpa tudo que não for número (ex: remove @c.us se tiver)
+    let numeroLimpo = customerPhone.replace(/\D/g, '');
+
+    // 2. Se vier com o código do Brasil (55) e tiver tamanho suficiente, remove o 55
+    if (numeroLimpo.length >= 12 && numeroLimpo.startsWith('55')) {
+      numeroLimpo = numeroLimpo.substring(2);
+    }
+
+    // Agora temos algo como "7181482521" (10 dígitos) ou "71981482521" (11 dígitos)
+    // 3. Fatiamos as partes que NUNCA mudam
+    const ddd = numeroLimpo.substring(0, 2);             // "71"
+    const final4 = numeroLimpo.slice(-4);                // "2521"
+    const meio4 = numeroLimpo.slice(-8, -4);             // "8148"
+
+    // 4. Busca flexível: Tem que ter o DDD e as duas metades, ignorando formatação do banco
+    const advogado = await prisma.user.findFirst({
+      where: {
+        AND: [
+          { telefone: { contains: ddd } },
+          { telefone: { contains: meio4 } },
+          { telefone: { contains: final4 } }
+        ],
+        ativo: true // Segurança extra
+      }
+    });
+
+    // Se for o advogado, intercepta a mensagem e envia pro Assistente Pessoal dele
+    if (advogado) {
+      const assistente = new AdvogadoAssistantService();
+      const resposta = await assistente.processarComando(texto, advogado.id);
+      return resposta;
     }
 
     let estadoAtual = conversation.workflowStep as WorkflowStep;
@@ -465,7 +505,7 @@ Agora um advogado irá analisar seu caso e entrar em contato com você.
     const result = await generateText({
       model: groq('llama-3.3-70b-versatile'),
       system: this.buildSystemPrompt(buildContext(conversation)),
-      messages,     
+      messages,
       tools: {
         atualizarEtapa: atualizarEtapaTool,
         registrarFatos: registrarFatosTool,
@@ -974,7 +1014,7 @@ Agora, responda à última mensagem do cliente seguindo estas diretrizes.
     const { text } = await generateText({
       model: groq('llama-3.3-70b-versatile'),
       temperature: 0.3, // Temperatura baixa para ser obediente
-      system,      
+      system,
       prompt: mensagemInstrucao, // Envia a instrução forte em vez do JSON simples
     });
 

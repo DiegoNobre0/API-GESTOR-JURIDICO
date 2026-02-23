@@ -81,6 +81,8 @@ model Processo {
   numeroInterno  String   @default(cuid())
   numeroProcesso String?
   descricaoObjeto String
+  numeroCNJ         String?   @unique
+  ultimaMovimentacao DateTime?
   
   responsavel    String   // Nome do advogado (ou link com User)
   tipoHonorarios String
@@ -197,20 +199,25 @@ model Transacao {
 }
 
 model Andamento {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  
-  // Relacionamento com Processo
-  processoId  String   @db.ObjectId
-  processo    Processo @relation(fields: [processoId], references: [id])
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
 
-  titulo      String   // Vamos salvar o "Tipo" aqui (Ex: "Publicação")
-  descricao   String
-  autorNome   String   // Nome do advogado que fez
+  processoId      String   @db.ObjectId
+  processo        Processo @relation(fields: [processoId], references: [id])
 
-  createdBy   String   @db.ObjectId
-  user        User     @relation(fields: [createdBy], references: [id])
+  titulo          String
+  descricao       String
+  autorNome       String
 
-  createdAt   DateTime @default(now())
+  createdBy       String   @db.ObjectId
+  user            User     @relation(fields: [createdBy], references: [id])
+
+  // 🔥 Campos novos para integração CNJ
+  codigoMovimento Int?
+  dataMovimento   DateTime?
+  orgaoJulgador   String?
+  tribunal        String?
+
+  createdAt       DateTime @default(now())
 
   @@map("andamentos")
 }

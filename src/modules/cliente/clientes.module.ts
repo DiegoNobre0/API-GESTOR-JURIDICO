@@ -11,4 +11,5 @@ export async function clientesRoutes(app: FastifyInstance) {
   app.get("/:id", async (req, rep) => controller.getById(req, rep));
   app.put("/:id", async (req, rep) => controller.update(req, rep));
   app.get("/", async (req, rep) => controller.list(req, rep));
+  app.get('/processos', controller.buscarProcessosPorCpf.bind(controller));
 }
