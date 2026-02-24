@@ -64,60 +64,60 @@ model Cliente {
   @@map("clientes")
 }
 
-model Processo {
-  id             String   @id @default(auto()) @map("_id") @db.ObjectId
-  
-  // --- VINCULAÇÃO COM CLIENTE (NOVO) ---
-  clienteId      String   @db.ObjectId
-  cliente        Cliente  @relation(fields: [clienteId], references: [id])
-  
-  // Mantemos esses campos como "cache" ou snapshot se quiser, 
-  // mas o ideal é puxar do cliente. Vou manter para não quebrar seu front atual.
-  clienteNome    String
-  clienteCpf     String?
-  clienteEmail   String?
+  model Processo {
+    id             String   @id @default(auto()) @map("_id") @db.ObjectId
+    
+    // --- VINCULAÇÃO COM CLIENTE (NOVO) ---
+    clienteId      String   @db.ObjectId
+    cliente        Cliente  @relation(fields: [clienteId], references: [id])
+    
+    // Mantemos esses campos como "cache" ou snapshot se quiser, 
+    // mas o ideal é puxar do cliente. Vou manter para não quebrar seu front atual.
+    clienteNome    String
+    clienteCpf     String?
+    clienteEmail   String?
 
-  // --- DADOS DO PROCESSO ---
-  numeroInterno  String   @default(cuid())
-  numeroProcesso String?
-  descricaoObjeto String
-  numeroCNJ         String?   @unique
-  ultimaMovimentacao DateTime?
-  
-  responsavel    String   // Nome do advogado (ou link com User)
-  tipoHonorarios String
-  statusGeral    String   @default("Triagem Inicial") // Mudado de "Contrato Fechado" para refletir a entrada via bot
-  statusProtocolamento String @default("Pendente")
+    // --- DADOS DO PROCESSO ---
+    numeroInterno  String   @default(cuid())
+    numeroProcesso String?
+    descricaoObjeto String
+    numeroCNJ         String?   
+    ultimaMovimentacao DateTime?
+    
+    responsavel    String   // Nome do advogado (ou link com User)
+    tipoHonorarios String
+    statusGeral    String   @default("Triagem Inicial") // Mudado de "Contrato Fechado" para refletir a entrada via bot
+    statusProtocolamento String @default("Pendente")
 
-  // --- FINANCEIRO ---
-  valorPrevistoIniciais Float @default(0)
-  valorPrevistoExito    Float @default(0)
-  basePrevisao          String?
-  custosPrevistos       Float @default(0)
-  
-  // --- DATAS ---
-  dataFechamentoContrato DateTime @default(now())
-  dataEstimadaRecebimento DateTime?
-  
-  // --- RELACIONAMENTOS ---
-  userId         String   @db.ObjectId
-  user           User     @relation(fields: [userId], references: [id])
-  
-  andamentos     Andamento[]
-  arquivos       ProcessoArquivo[] // Relação com os arquivos
+    // --- FINANCEIRO ---
+    valorPrevistoIniciais Float @default(0)
+    valorPrevistoExito    Float @default(0)
+    basePrevisao          String?
+    custosPrevistos       Float @default(0)
+    
+    // --- DATAS ---
+    dataFechamentoContrato DateTime @default(now())
+    dataEstimadaRecebimento DateTime?
+    
+    // --- RELACIONAMENTOS ---
+    userId         String   @db.ObjectId
+    user           User     @relation(fields: [userId], references: [id])
+    
+    andamentos     Andamento[]
+    arquivos       ProcessoArquivo[] // Relação com os arquivos
 
 
-  // --- VINCULAÇÃO COM CONVERSA (WHATSAPP) ---
-  conversationId  String?       @db.ObjectId
-  conversation    Conversation? @relation(fields: [conversationId], references: [id])
-  
-  dataArquivamento DateTime?
-  arquivado      Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+    // --- VINCULAÇÃO COM CONVERSA (WHATSAPP) ---
+    conversationId  String?       @db.ObjectId
+    conversation    Conversation? @relation(fields: [conversationId], references: [id])
+    
+    dataArquivamento DateTime?
+    arquivado      Boolean  @default(false)
+    createdAt      DateTime @default(now())
+    updatedAt      DateTime @updatedAt
 
-  @@map("processos")
-}
+    @@map("processos")
+  }
 
 model ProcessoArquivo {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId

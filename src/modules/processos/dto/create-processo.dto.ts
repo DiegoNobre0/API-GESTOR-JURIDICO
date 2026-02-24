@@ -8,6 +8,7 @@ export const createProcessoSchema = z.object({
   // NOVO: Telefone é obrigatório para fazer o vínculo/criação do cliente
   clienteTelefone: z.string().min(8, "Telefone é obrigatório"),
 
+  clienteEndereco: z.string().optional(),
   // CPF e Email continuam opcionais com preprocessamento
   clienteEmail: z.preprocess(
     (val) => (val === '' ? undefined : val),
@@ -17,6 +18,7 @@ export const createProcessoSchema = z.object({
     (val) => (val === '' ? undefined : val),
     z.string().optional().nullable()
   ),
+
 
   // --- DADOS DO PROCESSO ---
   descricaoObjeto: z.string(),

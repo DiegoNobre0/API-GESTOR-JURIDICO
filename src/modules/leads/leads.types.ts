@@ -16,7 +16,8 @@ export interface LeadJuridico {
   canal: string;
   dataEntrada: Date;
   ultimaMensagem: string;
-
+  cpf: string;
+  endereco: string;
   // Campos mapeados do tempData
   tipoCaso: string;
   empresa: string;

@@ -1,7 +1,7 @@
 
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { WhatsappService } from "./whatsapp.service.js";
-import { ZapSignService } from "../../infra/services/zapsign-service.js";
+
 import { CreateProcessoFromConversationService } from "../processos/create-processo.service.js";
 
 export class WhatsappController {
@@ -138,46 +138,7 @@ export class WhatsappController {
     return rep.status(200).send(updated);
   }
 
-  async aprovarContrato(req: FastifyRequest, rep: FastifyReply) {
-    const { id } = req.params as { id: string }; // ID da conversa
-    
-    // 1. Busca dados do cliente
-    const conversa = await this.service.getConversationById(id);
-    if (!conversa) return rep.status(404).send({ error: 'Cliente não encontrado' });
 
-    // 2. Instancia serviços
-    const zapsign = new ZapSignService();
-    // ID do seu modelo de contrato lá na ZapSign (copie do site deles)
-    const TEMPLATE_ID_PROCURACAO = "seu-id-de-template-aqui"; 
-
-    try {
-        // 3. Gera o contrato
-        const { linkAssinatura } = await zapsign.criarContrato(
-            conversa.customerName || 'Cliente', 
-            TEMPLATE_ID_PROCURACAO
-        );
-
-        // 4. Envia mensagem bonita no WhatsApp
-        const mensagem = `Olá, ${conversa.customerName}! 👋\n\n` +
-            `O Dr. Leonardo analisou seu caso e *aprovou* o seguimento.\n\n` +
-            `Para iniciarmos a ação, preciso que assine a procuração digitalmente. É rápido e pode ser feito na tela do celular:\n\n` +
-            `🖋️ *CLIQUE PARA ASSINAR:* ${linkAssinatura}\n\n` +
-            `Assim que assinar, eu recebo o aviso aqui e começo a redigir a petição.`;
-
-        await this.service.sendTextByConversationId(id, mensagem);
-
-        // 5. Atualiza status no banco
-        await this.service.updateConversation(id, { 
-            workflowStep: 'AGUARDANDO_ASSINATURA' 
-        });
-
-        return rep.status(200).send({ success: true, link: linkAssinatura });
-
-    } catch (error) {
-        console.error(error);
-        return rep.status(500).send({ error: 'Erro ao gerar contrato' });
-    }
-}
 
 async transformarEmProcesso(req: FastifyRequest, rep: FastifyReply) {
     const { id } = req.params as { id: string };

@@ -3,10 +3,9 @@ import { groq } from '@ai-sdk/groq';
 import { z } from 'zod';
 import { prisma } from '../../lib/prisma.js';
 
-import { ZapSignService } from './zapsign-service.js';
 
-import { DocumentExceptionPolicy } from './policy/document-exception-policy.js';
-import { detectGreeting } from './policy/greeting.util.js';
+
+import { detectGreeting } from './utils/greeting.util.js';
 import type { ModelMessage } from 'ai';
 import { AdvogadoAssistantService } from './advogado-assistant.service.js';
 
@@ -77,7 +76,7 @@ const atualizarEtapaTool = tool<{}, void>({
 const registrarFatosSchema = z.object({
   dinamica_do_dano: z
     .string()
-    .min(30, 'Descreva o ocorrido com mais detalhes')
+    .min(25, 'Descreva o ocorrido com mais detalhes')
     .describe(
       'Descrição detalhada do que aconteceu, incluindo contexto, duração, transtornos e consequências práticas'
     ),
@@ -259,8 +258,6 @@ const CHECKLISTS: Record<TipoCaso, DocumentoChecklist[]> = {
 --------------------------------- */
 
 export class ChatbotService {
-  private zapSignService = new ZapSignService();
-
   constructor() { }
 
   async chat(message: string, customerPhone: string) {
@@ -296,58 +293,44 @@ export class ChatbotService {
 
     // Limpa o número para comparar apenas os dígitos (ex: 5511999999999)
     // 1. Limpa tudo que não for número (ex: remove @c.us se tiver)
-    let numeroLimpo = customerPhone.replace(/\D/g, '');
+    // let numeroLimpo = customerPhone.replace(/\D/g, '');
 
     // 2. Se vier com o código do Brasil (55) e tiver tamanho suficiente, remove o 55
-    if (numeroLimpo.length >= 12 && numeroLimpo.startsWith('55')) {
-      numeroLimpo = numeroLimpo.substring(2);
-    }
+    // if (numeroLimpo.length >= 12 && numeroLimpo.startsWith('55')) {
+    //   numeroLimpo = numeroLimpo.substring(2);
+    // }
 
     // Agora temos algo como "7181482521" (10 dígitos) ou "71981482521" (11 dígitos)
     // 3. Fatiamos as partes que NUNCA mudam
-    const ddd = numeroLimpo.substring(0, 2);             // "71"
-    const final4 = numeroLimpo.slice(-4);                // "2521"
-    const meio4 = numeroLimpo.slice(-8, -4);             // "8148"
+    // const ddd = numeroLimpo.substring(0, 2);            
+    // const final4 = numeroLimpo.slice(-4);                
+    // const meio4 = numeroLimpo.slice(-8, -4);             
 
     // 4. Busca flexível: Tem que ter o DDD e as duas metades, ignorando formatação do banco
-    const advogado = await prisma.user.findFirst({
-      where: {
-        AND: [
-          { telefone: { contains: ddd } },
-          { telefone: { contains: meio4 } },
-          { telefone: { contains: final4 } }
-        ],
-        ativo: true // Segurança extra
-      }
-    });
+    // const advogado = await prisma.user.findFirst({
+    //   where: {
+    //     AND: [
+    //       { telefone: { contains: ddd } },
+    //       { telefone: { contains: meio4 } },
+    //       { telefone: { contains: final4 } }
+    //     ],
+    //     ativo: true // Segurança extra
+    //   }
+    // });
 
     // Se for o advogado, intercepta a mensagem e envia pro Assistente Pessoal dele
-    if (advogado) {
-      const assistente = new AdvogadoAssistantService();
-      const resposta = await assistente.processarComando(texto, advogado.id);
-      return resposta;
-    }
+    // if (advogado) {
+    //   const assistente = new AdvogadoAssistantService();
+    //   const resposta = await assistente.processarComando(texto, advogado.id);
+    //   return resposta;
+    // }
 
     let estadoAtual = conversation.workflowStep as WorkflowStep;
     let tipoCaso = (conversation.tipoCaso as TipoCaso) ?? 'GERAL';
     const jaApresentado = !!conversation.presentedAt;
 
     const { isGreeting, isPureGreeting } = detectGreeting(texto);
-
-    /* -----------------------------
-       DOCUMENTOS RECEBIDOS
-    ----------------------------- */
-    // const mensagensDocumento = await prisma.message.findMany({
-    //   where: {
-    //     conversationId: conversation.id,
-    //     type: 'document',
-    //     processed: false,
-    //   },
-    //   select: { fileName: true },
-    // });
-    // const documentosRecebidos = mensagensDocumento
-    // .map(d => d.fileName?.split('.')[0]?.toUpperCase())
-    // .filter(Boolean) as string[];
+   
 
     const documentosRecebidos = await prisma.conversationDocument.findMany({
       where: {
@@ -697,142 +680,7 @@ Agora um advogado irá analisar seu caso e entrar em contato com você.
     }
 
     return textoResposta;
-  }
-
-
-  /* ---------------------------------
-     PROMPT
-  --------------------------------- */
-
-  //   private buildSystemPrompt(context: {
-  //     estadoAtual: WorkflowStep;
-  //     tipoCaso: TipoCaso;
-  //     documentosFaltantes: string[];
-  //     documentosEsperadosAgora: string[];
-  //     presentedAt: Date | null;
-  //     saudacaoTempo?: string;
-  //     fatos?: any;
-  //   }) {
-  //     return `
-  // VOCÊ É Carol, advogada do escritório RCS Advocacia.
-
-  // CONTEXTO CRÍTICO:
-  // - Apresentação já realizada: ${context.presentedAt ? 'SIM' : 'NÃO'}
-  // - Saudação do Horário Atual: "${context.saudacaoTempo || 'Olá'}" (USE ESTA).
-  // - Fatos Coletados: ${JSON.stringify(context.fatos || {})}
-
-  // REGRAS ABSOLUTAS DE APRESENTAÇÃO:
-  // - A apresentação ("Me chamo Carol...", "sou advogada...") só pode ocorrer UMA ÚNICA VEZ em toda a conversa.
-  // - Se "Apresentação já realizada" for SIM, é PROIBIDO repetir qualquer forma de apresentação.
-  // - Se o cliente já iniciou ou descreveu um problema, é PROIBIDO perguntar "como posso ajudar" ou pedir o nome.
-  // - Se a conversa já possui histórico, NÃO se comporte como primeira interação.
-
-  // MEMÓRIA:
-  // - Você recebe TODO o histórico da conversa.
-  // - NÃO repita informações, perguntas ou saudações já feitas.
-  // - Continue a conversa exatamente de onde ela parou.
-
-  // APRESENTACAO_INICIAL (somente se Apresentação já realizada = NÃO):
-  // - Cumprimente de acordo com o horário.
-  // - Use EXATAMENTE a saudação: "${context.saudacaoTempo || 'Olá'}".
-  // - Diga: "Me chamo Carol, sou advogada do escritório RCS Advocacia".
-  // - Pergunte se está tudo bem.
-  // - Pergunte o nome do cliente de forma natural (ex: "Como posso te chamar?").
-  // - Máximo de 2 frases curtas.
-  // - NÃO peça relato detalhado.
-  // - NÃO peça documentos.
-
-
-  // RITMO DE CONVERSA (OBRIGATÓRIO):
-  // - Nunca solicite documentos logo após uma saudação.
-  // - Nunca combine acolhimento emocional + pedido de documento.
-  // - Antes de qualquer solicitação, confirme entendimento.
-  // - Explique brevemente o motivo de qualquer pedido.
-
-  // COLETA_FATOS (CRITÉRIO RIGOROSO):
-  // Para finalizar esta etapa e chamar 'atualizarEtapa', você precisa OBRIGATORIAMENTE de 3 pilares.
-  // Analise o histórico e verifique mentalmente:
-
-  // 1. [ ] DINÂMICA DO DANO (O que houve + Detalhe do prejuízo/transtorno)
-  // 2. [ ] EMPRESA/RÉU (Quem causou)
-  // 3. [ ] DATA DO OCORRIDO (Quando foi, mês/ano aproximado)
-
-  // REGRA DE OURO ANTI-LOOP:
-  // - Antes de responder, verifique quais itens acima JÁ FORAM informados.
-  // - NUNCA pergunte algo que o usuário já respondeu ou que você já citou no resumo.
-  // - Se o usuário já disse o nome da empresa, NÃO pergunte "Qual a empresa?".
-  // - Se falta apenas a DATA, sua ÚNICA pergunta deve ser: "Entendi. E quando isso aconteceu?"
-
-  // EXEMPLO DE RACIOCÍNIO:
-  // - Tenho o problema? Sim.
-  // - Tenho a empresa? Sim.
-  // - Tenho a data? NÃO.
-  // -> AÇÃO: Perguntar apenas a data.
-
-  // SE O RELATO ESTIVER COMPLETO (Os 3 itens preenchidos):
-  // - Não faça mais perguntas.
-  // - CHAME A TOOL 'atualizarEtapa' IMEDIATAMENTE
-  // Nesta etapa:
-  // - Faça UMA pergunta por vez.
-  // - Se faltar alguma informação, pergunte apenas sobre o ponto faltante.
-  // - Não repita perguntas já respondidas.
-  // - Qualquer resposta em TEXTO é considerada ERRO.
-  // - A única resposta válida é chamar a tool "atualizarEtapa".
-
-  // REGRA CRÍTICA DE TOOLS:
-  // - A tool "atualizarEtapa" NÃO recebe parâmetros.
-  // - Ela apenas sinaliza que a etapa atual foi concluída.
-  // - A definição da próxima etapa é responsabilidade do sistema.
-  // - Dados do caso devem ser enviados SOMENTE pela tool "registrarFatos".
-  // - Nunca combine dados e transição na mesma tool.
-
-  // TOM DE VOZ:
-  // - Profissional, humano e acolhedor.
-  // - Frases curtas.
-  // - Sem emojis.
-  // - Sem linguagem publicitária ou institucional.
-
-  // SUA FUNÇÃO:
-  // - Coletar informações iniciais do cliente.
-  // - Organizar documentos.
-  // - Encaminhar o caso para análise humana.
-  // - NUNCA prestar aconselhamento jurídico.
-
-  // REGRAS INEGOCIÁVEIS:
-  // 1. NUNCA afirme ou sugira direito, ganho de causa ou indenização.
-  // 2. NUNCA dê opinião jurídica, previsão de resultado ou valores.
-  // 3. Para avançar etapas, VOCÊ DEVE chamar a tool "atualizarEtapa".
-  // 4. NÃO avance etapas apenas com texto.
-  // 5. Faça no máximo UMA pergunta objetiva por mensagem.
-  // 6. Se a etapa atual estiver completa, CHAME a tool adequada.
-  // 7. Dados sensíveis (ex: saúde): solicite APENAS documentos, nunca descrições.
-
-  // VOCÊ NÃO DECIDE:
-  // - Qual etapa vem a seguir.
-  // - Se documentos são suficientes.
-  // - Se o fluxo deve avançar sem tool.
-
-  // FLUXO ATUAL:
-  // - Etapa: ${context.estadoAtual}
-  // - Tipo de caso: ${context.tipoCaso}
-
-  // DOCUMENTOS PENDENTES:
-  // ${context.documentosFaltantes.length ? context.documentosFaltantes.join(', ') : 'Nenhum'}
-
-  // COMPORTAMENTO FINAL:
-  // - Linguagem simples.
-  // - Sem termos técnicos.
-  // - Seja clara, educada e objetiva.
-  // - Em caso de dúvida, peça esclarecimento antes de avançar.
-
-  // FLUIDEZ OBRIGATÓRIA:
-  // - Responda como uma conversa real de WhatsApp.
-  // - Não antecipe perguntas.
-  // - Sempre aguarde resposta antes de avançar.
-  // - Nunca repita saudações já feitas.
-  // `;
-
-  //   }
+  } 
 
   private buildSystemPrompt(context: {
     estadoAtual: WorkflowStep;
@@ -1030,30 +878,9 @@ Agora, responda à última mensagem do cliente seguindo estas diretrizes.
     return textoLimpo;
   }
 
-  // // ======================================================
-  // // 🎙️ TRANSCRIÇÃO DE ÁUDIO (WHATSAPP / PTT)
-  // // ======================================================
-  // async transcreverAudio(
-  //   audioBuffer: Buffer,
-  //   mimeType: string
-  // ): Promise<string> {
-  //   const file = new File(
-  //     [audioBuffer],
-  //     'audio.ogg',
-  //     { type: mimeType }
-  //   );
 
-  //   const transcription =
-  //     await this.groqClient.audio.transcriptions.create({
-  //       file,
-  //       model: 'whisper-large-v3',
-  //       language: 'pt',
-  //       response_format: 'json',
-  //     });
 
-  //   return transcription.text?.trim() || '';
-  // }
-
+ 
 
 
 }

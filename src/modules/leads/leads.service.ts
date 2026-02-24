@@ -27,13 +27,14 @@ export class LeadsService {
 
       return {
         id: conv.id,
-        nome: conv.customerName || 'Sem Nome',
+        nome: tempData.extracted_RG_nome || tempData.extracted_CNH_nome || conv.customerName || 'Cliente sem Nome',
         telefone: conv.customerPhone,
         canal: conv.channel,
         dataEntrada: conv.createdAt,
         ultimaMensagem: conv.lastMessageBody || '',
-        
+        cpf: tempData.extracted_RG_cpf || tempData.extracted_CNH_cpf || tempData.extracted_CPF_numero || '', // Mapeia o CPF do tempData, se existir
         tipoCaso: conv.tipoCaso || tempData.tipoCaso || 'GERAL',
+        endereco: tempData.extracted_COMP_RES_endereco || '', // Mapeia o endereço do tempData, se existir
         empresa: tempData.empresa || '',
         dataOcorrido: tempData.data_do_ocorrido || tempData.dataOcorrido || '', 
         dinamicaDoDano: tempData.dinamica_do_dano || tempData.dinamicaDoDano || '',

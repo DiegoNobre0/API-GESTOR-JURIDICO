@@ -40,7 +40,7 @@ export async function whatsappModule(app: FastifyInstance) {
   // 7. Atualizar Cliente
   app.put('/chat/conversations/:id/customer', (req, rep) => whatsappController.updateCustomer(req, rep));
 
-  app.post('/chat/conversations/:id/approve', (req, rep) => whatsappController.aprovarContrato(req, rep));
+
 
   app.post('/chat/atendimentos/:id/mensagens/upload', (req, rep) => whatsappController.sendMedia(req, rep));
 }

@@ -21,20 +21,20 @@ export async function processosModule(app: FastifyInstance) {
     group.get("/:id", async (req) => service.findById((req.params as any).id, req.user.sub));
 
     // Salvar Novo
-  group.post("/", async (req, rep) => {
+    group.post("/", async (req, rep) => {
       try {
         // Tenta validar
         const data = createProcessoSchema.parse(req.body);
-        
+
         // Se passou, cria
         const processo = await service.create(data, req.user.sub);
         return rep.status(201).send(processo);
-      
+
       } catch (error: any) {
         // Se for erro do Zod ou outro erro de regra
-        return rep.status(400).send({ 
-          error: "Erro de Validação", 
-          details: error.issues || error.message 
+        return rep.status(400).send({
+          error: "Erro de Validação",
+          details: error.issues || error.message
         });
       }
     });
@@ -79,7 +79,16 @@ export async function processosModule(app: FastifyInstance) {
     });
 
     group.post("/gerar-pela-conversa/:id", (req, rep) => controller.gerarPelaConversa(req, rep));
-    group.post('/zapsign/gerar', (req, res) => controller.gerarZapSign(req, res));
+    group.delete("/:id", async (req, rep) => {
+      const { id } = req.params as { id: string };
+
+      try {
+        await service.delete(id, req.user.sub);
+        return rep.status(204).send(); // 204 significa "Deu certo e não tem corpo de resposta"
+      } catch (error: any) {
+        return rep.status(400).send({ error: error.message });
+      }
+    });
     // Arquivar/Desarquivar
     group.put("/:id/arquivar", async (req) => service.setArquivado((req.params as any).id, req.user.sub, true));
     group.put("/:id/desarquivar", async (req) => service.setArquivado((req.params as any).id, req.user.sub, false));

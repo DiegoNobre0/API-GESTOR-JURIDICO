@@ -5,7 +5,7 @@ import { prisma } from '../../lib/prisma.js';
 import { DatajudService } from './datajud.service.js';
 import { MailService } from './mail-service.js';
 
-cron.schedule('0 7 * * *', async () => {
+cron.schedule('0 4 * * *', async () => {
   console.log('⏳ [CRON] Iniciando monitoramento inteligente...');
 
   const datajud = new DatajudService();

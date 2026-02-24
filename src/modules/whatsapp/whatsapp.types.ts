@@ -31,7 +31,7 @@ export interface IncomingMessage {
   from: string;
   id: string;
   timestamp: string;
-  type: 'text' | 'image' | 'document' | 'audio' | 'voice' | 'ptt';
+  type: 'text' | 'image' | 'document' | 'audio' | 'voice' | 'ptt' | 'video';
 
   text?: { body: string };
 
@@ -40,4 +40,6 @@ export interface IncomingMessage {
   document?: { id: string; filename: string; mime_type: string };
 
   audio?: { id: string; mime_type: string };
+
+  video?: { id: string; mime_type: string };
 }

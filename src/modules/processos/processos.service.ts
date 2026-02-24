@@ -2,11 +2,10 @@ import { prisma } from "../../lib/prisma.js";
 import { Prisma } from "@prisma/client";
 import { ProcessoEntity } from "./entities/processo.entity.js";
 import type { CreateProcessoInput } from "./dto/create-processo.dto.js";
-import { ZapSignService } from "@/infra/services/zapsign-service.js";
+
 // 👇 IMPORTAÇÃO DO ZAPSIGN (ajuste o caminho se necessário)
 
 
-const zapSignService = new ZapSignService();
 
 export class ProcessosService {
 
@@ -35,13 +34,15 @@ export class ProcessosService {
         update: {
           nome: input.clienteNome,
           email: input.clienteEmail ?? null,
-          telefone: input.clienteTelefone
+          telefone: input.clienteTelefone,
+          endereco: input.clienteEndereco ?? null
         },
         create: {
           nome: input.clienteNome,
           cpf: input.clienteCpf,
           email: input.clienteEmail ?? null,
-          telefone: input.clienteTelefone 
+          telefone: input.clienteTelefone ,
+          endereco: input.clienteEndereco ?? null
         }
       });
       clienteIdConectado = cliente.id;
@@ -51,12 +52,14 @@ export class ProcessosService {
         update: {
           nome: input.clienteNome,
           email: input.clienteEmail ?? null,
+          endereco: input.clienteEndereco ?? null
         },
         create: {
           nome: input.clienteNome,
           email: input.clienteEmail ?? null,
           telefone: input.clienteTelefone,
-          cpf: null 
+          cpf: null ,
+          endereco: input.clienteEndereco ?? null
         }
       });
       clienteIdConectado = cliente.id;
@@ -70,41 +73,9 @@ export class ProcessosService {
       nomeArquivo: arq.nomeArquivo
     })) || [];
 
-    // Se o frontend pediu para gerar os documentos (clicou no botão)
-    if (input.gerarDocumentosZapSign) {
-      const dadosParaDocumento = {
-        nome: input.clienteNome,
-        cpf: input.clienteCpf,
-        telefone: input.clienteTelefone,
-        endereco: "Endereço pendente" // Opcional: Pegar do formulário depois se quiser
-      };
-
-      // Gera Contrato
-      const contrato = await zapSignService.gerarDocumento(
-        dadosParaDocumento,
-        "65194d71-ad5d-4192-a2b2-5838f664a6dc", // ID do Modelo do Contrato
-        `Contrato - ${input.clienteNome}`
-      );
-      if (contrato) arquivosParaSalvar.push({
-          tipo: "CONTRATO",
-          nomeArquivo: contrato.nomeArquivo,
-          url: contrato.url
-      });
-
-      // Gera Procuração
-      const procuracao = await zapSignService.gerarDocumento(
-        dadosParaDocumento,
-        "52151f47-c845-45a7-beae-6cd1042d5ecb", // ID do Modelo da Procuração
-        `Procuração - ${input.clienteNome}`
-      );
-      if (procuracao) arquivosParaSalvar.push({
-          tipo: "PROCURAÇÃO",
-          nomeArquivo: procuracao.nomeArquivo,
-          url: procuracao.url
-      });
-    }
 
     // 5. Montagem do Payload do Prisma
+// 5. Montagem do Payload do Prisma
     const prismaData: Prisma.ProcessoCreateInput = {
       // --- CAMPOS OBRIGATÓRIOS ---
       descricaoObjeto: entity.props.descricaoObjeto,
@@ -119,11 +90,14 @@ export class ProcessosService {
       clienteNome: entity.props.clienteNome,
 
       // --- CAMPOS OPCIONAIS (NULLABLE) ---
-      clienteCpf: entity.props.clienteCpf ?? null,
-      clienteEmail: entity.props.clienteEmail ?? null,
-      numeroProcesso: entity.props.numeroProcesso ?? null,
-      basePrevisao: entity.props.basePrevisao ?? null,
-      dataEstimadaRecebimento: entity.props.dataEstimadaRecebimento ?? null,
+      clienteCpf: entity.props.clienteCpf || null,
+      clienteEmail: entity.props.clienteEmail || null,
+      basePrevisao: entity.props.basePrevisao || null,
+      dataEstimadaRecebimento: entity.props.dataEstimadaRecebimento || null,
+
+      // 👇 CORREÇÃO AQUI: Usando `|| null` para garantir que campos vazios cheguem como null no banco
+      numeroProcesso: entity.props.numeroProcesso?.trim() || null,
+      numeroCNJ: entity.props.numeroProcesso?.trim() || null, 
 
       // 👇 VINCULAÇÃO COM O CHAT DO WHATSAPP AQUI
       ...(input.conversationId ? { conversation: { connect: { id: input.conversationId } } } : {}),
@@ -154,7 +128,10 @@ export class ProcessosService {
     return await prisma.processo.findMany({
       where: { userId, arquivado },
       orderBy: { createdAt: 'desc' },
-      include: { cliente: true }
+      include: 
+      { cliente: true ,
+        conversation: true
+      }
     });
   }
 
@@ -185,14 +162,82 @@ export class ProcessosService {
     const processo = await prisma.processo.findFirst({ where: { id, userId } });
     if (!processo) throw new Error("Processo não encontrado.");
 
-    const dataToUpdate = { ...input };
-    Object.keys(dataToUpdate).forEach((key) => {
-      if (dataToUpdate[key] === undefined) delete dataToUpdate[key];
+    // 1. SEPARAR OS DADOS
+    const {
+      clienteTelefone,
+      clienteEndereco,
+      clienteId,
+      arquivos,  // 👈 O array de arquivos que vem do front
+      ...dadosProcesso
+    } = input;
+
+    Object.keys(dadosProcesso).forEach((key) => {
+      if (dadosProcesso[key] === undefined) delete dadosProcesso[key];
     });
 
+    if (dadosProcesso.numeroProcesso !== undefined) {
+      dadosProcesso.numeroProcesso = dadosProcesso.numeroProcesso?.trim() || null;
+      dadosProcesso.numeroCNJ = dadosProcesso.numeroProcesso; 
+    }
+
+    // 2. ATUALIZAR O CLIENTE VINCULADO
+    if (processo.clienteId) {
+      const dadosParaOCliente: any = {};
+      
+      if (dadosProcesso.clienteNome !== undefined) dadosParaOCliente.nome = dadosProcesso.clienteNome;
+      if (dadosProcesso.clienteCpf !== undefined) dadosParaOCliente.cpf = dadosProcesso.clienteCpf;
+      if (dadosProcesso.clienteEmail !== undefined) dadosParaOCliente.email = dadosProcesso.clienteEmail;
+      
+      if (clienteTelefone !== undefined) dadosParaOCliente.telefone = clienteTelefone;
+      if (clienteEndereco !== undefined) dadosParaOCliente.endereco = clienteEndereco;
+
+      if (Object.keys(dadosParaOCliente).length > 0) {
+        await prisma.cliente.update({
+          where: { id: processo.clienteId },
+          data: dadosParaOCliente
+        });
+      }
+    }
+
+    // 3. LÓGICA DE ATUALIZAÇÃO DOS ARQUIVOS E MUDANÇA DE WORKFLOW
+    if (arquivos && Array.isArray(arquivos)) {
+      dadosProcesso.arquivos = {
+        deleteMany: {}, 
+        create: arquivos.map((arq: any) => ({
+          tipo: arq.tipo, // O front manda 'CONTRATO', 'PROCURACAO', 'DOCUMENTO', etc
+          url: arq.url,
+          nomeArquivo: arq.nomeArquivo
+        }))
+      };
+
+      // 👇👇👇 A MÁGICA ACONTECE AQUI 👇👇👇
+
+      // Verifica se na lista de arquivos que o front mandou agora, 
+      // o advogado incluiu o Contrato e a Procuração
+      const temContrato = arquivos.some(arq => arq.tipo === 'CONTRATO');
+      const temProcuracao = arquivos.some(arq => arq.tipo === 'PROCURACAO'); // ou 'PETICAO', mude se quiser
+
+      // Se ambos foram anexados E esse processo nasceu de uma conversa de WhatsApp
+      if (temContrato && temProcuracao && processo.conversationId) {
+        
+        console.log(`✅ Contrato e Procuração anexados. Finalizando o Lead (Conversa ID: ${processo.conversationId})...`);
+
+        // Atualizamos o Workflow da Conversa
+        await prisma.conversation.update({
+          where: { id: processo.conversationId },
+          data: {
+            workflowStep: "FINALIZADO", // 👈 Muda o workflow
+            status: "CLOSED",           // 👈 Opcional: Fecha o chat para não ficar poluindo a caixa de entrada
+          }
+        });
+      }
+    }
+
+    // 4. ATUALIZAR O PROCESSO E OS ARQUIVOS (Executa a query)
     return await prisma.processo.update({
       where: { id },
-      data: dataToUpdate
+      data: dadosProcesso,
+      include: { arquivos: true }
     });
   }
 
@@ -219,6 +264,33 @@ export class ProcessosService {
         autorNome: user.nome || "Advogado",
         createdBy: userId,
       }
+    });
+  }
+
+  // 👇 NOVO MÉTODO: EXCLUIR PROCESSO
+  async delete(id: string, userId: string) {
+    // 1. Verifica se o processo existe e pertence ao usuário/advogado logado
+    const processo = await prisma.processo.findFirst({
+      where: { id, userId }
+    });
+
+    if (!processo) {
+      throw new Error("Processo não encontrado ou você não tem permissão para excluí-lo.");
+    }
+
+    // 2. Exclui primeiro as tabelas dependentes para evitar erros de Foreign Key 
+    // (Caso não tenha onDelete: Cascade configurado no seu banco)
+    await prisma.andamento.deleteMany({
+      where: { processoId: id }
+    });
+
+    await prisma.processoArquivo.deleteMany({
+      where: { processoId: id }
+    });
+
+    // 3. Exclui o processo principal
+    return await prisma.processo.delete({
+      where: { id }
     });
   }
 }

@@ -1,8 +1,8 @@
 import { prisma } from '../../lib/prisma.js';
 import { ChatbotService } from '../../infra/services/chatbot-service.js';
 import { StorageService } from '../../infra/services/storage.service.js'; // <--- IMPORTANTE
-
 import FormData from 'form-data';
+import axios from 'axios';
 import fetch from 'node-fetch';
 import type { FastifyInstance } from 'fastify';
 import type { IncomingMessage, MetaMessagePayload } from './whatsapp.types.js';
@@ -60,7 +60,7 @@ export class WhatsappService {
       const conversation = await this.findOrCreateConversation(message.from, contactName);
 
       // 3. DETECÇÃO DE MÍDIA (AQUI ESTÁ A CORREÇÃO)
-      const mediaTypes = ['image', 'document', 'audio', 'voice', 'ptt'];
+      const mediaTypes = ['image', 'document', 'audio', 'voice', 'ptt', 'video'];
       const isMedia = mediaTypes.includes(message.type);
 
       if (isMedia) {
@@ -114,227 +114,34 @@ export class WhatsappService {
     }
   }
 
-  // ===========================================================================
-  // LÓGICA DE PROCESSAMENTO DE MÍDIA
-  // ===========================================================================
+ 
 
-  // private async handleIncomingMedia(message: IncomingMessage, conversation: any) {
-  //   try {
-
-  //     const etapasAceitas = ['COLETA_DOCS', 'COLETA_DOCS_EXTRA'];
-
-  //     const workflowStep = conversation.workflowStep?.trim();
-
-  //     if (!etapasAceitas.includes(workflowStep)) {
-  //       await this.sendText(
-  //         conversation.customerPhone,
-  //         'Já recebi 👍 Vou analisar esse documento assim que chegarmos na etapa correta, tudo bem?',
-  //         conversation.id
-  //       );
-  //       return;
-  //     }
-  //     // 1. [UX] Feedback Imediato: Avisa que recebeu antes de processar
-  //     await this.sendText(
-  //       conversation.customerPhone,
-  //       "Recebi seu documento! \nEstou analisando a imagem para validar os dados, aguarde um instante...",
-  //       conversation.id
-  //     );
-
-  //     // 2. Identificar ID e MimeType com Segurança
-  //     let mediaId = '';
-  //     let mimeType = '';
-  //     let mediaType: 'image' | 'document' | 'audio' = 'document';
-  //     let fileName = '';
-
-  //     switch (message.type) {
-  //       case 'image':
-  //         mediaId = message.image?.id || '';
-  //         mimeType = message.image?.mime_type || 'image/jpeg';
-  //         mediaType = 'image';
-  //         fileName = `imagem_${Date.now()}`;
-  //         break;
-
-  //       case 'document':
-  //         mediaId = message.document?.id || '';
-  //         mimeType = message.document?.mime_type || 'application/pdf';
-  //         mediaType = 'document';
-  //         fileName = message.document?.filename || `documento_${Date.now()}`;
-  //         break;
-
-  //       case 'audio':
-  //       case 'voice':
-  //       case 'ptt':
-  //         mediaId = message.audio?.id || '';
-  //         mimeType = message.audio?.mime_type || 'audio/ogg';
-  //         mediaType = 'audio';
-  //         fileName = `audio_${Date.now()}.ogg`;
-  //         break;
-  //     }
-
-
-  //     // Se não for imagem nem documento (ex: áudio, sticker), ignora ou trata diferente
-  //     if (!mediaId) return;
-
-  //     // 3. Baixar buffer da Meta
-  //     const fileBuffer = await this.downloadMediaFromMeta(mediaId);
-
-  //     // 4. Descobrir contexto (O que falta?)
-  //     const pendentes = await this.getDocumentosPendentes(conversation.id);
-  //     // Se tiver pendências, assume que é a primeira. Se não, marca como EXTRA.
-  //     const docTypeContext = pendentes[0] ?? 'DOCUMENTO_EXTRA';
-
-  //     // 5. Upload R2
-  //     const extension = mimeType.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
-  //     const folder = `clientes/${conversation.customerPhone}`;
-  //     const uploadResult = await this.storageService.uploadFile(fileBuffer, extension, folder);
-
-  //     // 6. Análise de IA (OCR)
-  //     let analiseIA = null;
-
-  //     if (docTypeContext !== 'DOCUMENTO_EXTRA') {
-  //       analiseIA = await this.docAnalysisService.analyzeDocument(
-  //         fileBuffer,
-  //         docTypeContext
-  //       );
-  //     }
-
-  //     // 7. Salvar na tabela ConversationDocument (Link para o advogado)
-  //     const isExtra = docTypeContext === 'DOCUMENTO_EXTRA';
-
-  //     await prisma.conversationDocument.create({
-  //       data: {
-  //         conversationId: conversation.id,
-
-  //         tipo: isExtra ? 'DOCUMENTO' : docTypeContext,
-  //         etapa: isExtra ? 'COMPLEMENTAR' : 'ESSENCIAL',
-
-  //         mediaUrl: uploadResult.url,
-  //         fileName: isExtra
-  //           ? `extra_${Date.now()}.${extension}`
-  //           : `${docTypeContext}.${extension}`,
-
-  //         mimeType,
-
-  //         validado: isExtra ? true : analiseIA?.legivel || false,
-  //         extractedData: isExtra ? {} : analiseIA ?? {},
-  //       }
-  //     });
-
-  //     // 8. Salvar dados extraídos SOMENTE se for documento obrigatório
-  //     if (
-  //       docTypeContext !== 'DOCUMENTO_EXTRA' &&
-  //       analiseIA &&
-  //       analiseIA.legivel
-  //     ) {
-  //       await prisma.conversation.update({
-  //         where: { id: conversation.id },
-  //         data: {
-  //           tempData: {
-  //             ...(conversation.tempData as object ?? {}),
-  //             [`extracted_${docTypeContext}_nome`]: analiseIA.nome_completo,
-  //             [`extracted_${docTypeContext}_rg`]: analiseIA.rg_numero,
-  //             [`extracted_${docTypeContext}_cpf`]: analiseIA.cpf_numero,
-  //             [`extracted_${docTypeContext}_endereco`]: analiseIA.endereco_completo,
-  //             [`extracted_${docTypeContext}_legivel`]: true
-  //           }
-  //         }
-  //       });
-
-  //       console.log(`✅ Dados extraídos do ${docTypeContext}:`, analiseIA);
-  //     }
-
-  //     // 9. Registrar mensagem visual no chat (Para aparecer no front)
-  //     const savedMessage = await prisma.message.create({
-  //       data: {
-  //         wa_id: message.id,
-  //         content: uploadResult.url, // 🔥 URL do arquivo
-  //         role: 'USER',
-  //         type: mediaType,           // 'image' | 'document' | 'audio'
-  //         status: 'read',
-  //         conversationId: conversation.id,
-  //         fileName: `${docTypeContext}.${extension}`,
-  //       }
-  //     });
-
-  //     // Socket update
-  //     this.app.io.emit('new_whatsapp_message', { ...savedMessage, conversationId: conversation.id });
-
-  //     // 10. Construção do Prompt para o Bot
-  //     let promptDoBot = '';
-
-  //     if (docTypeContext === 'DOCUMENTO_EXTRA') {
-  //       promptDoBot = `[SISTEMA]: O usuário enviou um documento complementar ao caso.
-  // Agradeça o envio e diga que esse material ajudará a fortalecer a análise jurídica.
-  // Pergunte se deseja enviar mais alguma prova ou se prefere finalizar digitando FINALIZAR.`;
-  //     }
-
-  //     if (analiseIA && !analiseIA.legivel) {
-  //       // Cenário A: IA não conseguiu ler
-  //       promptDoBot = `[SISTEMA]: O usuário enviou uma imagem do ${docTypeContext}, mas a IA Vision marcou como ILEGÍVEL/BORRADA. 
-  //       Agradeça o envio, mas peça gentilmente para enviar uma foto mais nítida, sem reflexos e bem iluminada.`;
-  //     }
-  //     else if (analiseIA) {
-  //       // Cenário B: IA leu com sucesso (Confirmação)
-  //       // Formata os dados para o bot ler de forma limpa
-  //       const dadosLidos = `
-  //         - Nome: ${analiseIA.nome_completo || 'Não identificado'}
-  //         - CPF: ${analiseIA.cpf_numero || 'Não identificado'}
-  //         - RG: ${analiseIA.rg_numero || 'Não identificado'}
-  //       `;
-
-  //       promptDoBot = `[SISTEMA]: O usuário enviou o ${docTypeContext}.
-  //       A IA leu os seguintes dados: ${dadosLidos}.
-
-  //       AÇÃO: Agradeça e peça para o cliente CONFIRMAR se esses dados (Nome e CPF) estão corretos para o contrato. 
-  //       Se estiverem corretos, ele deve responder "Sim".`;
-  //     }
-  //     else {
-  //       // Cenário C: Fallback (Erro na API da IA ou retorno null)
-  //       promptDoBot = `[SISTEMA]: O usuário enviou o ${docTypeContext}, mas não consegui ler os dados automaticamente. 
-  //       Agradeça o envio e pergunte se a foto está legível para ele.`;
-  //     }
-
-  //     // 11. Aciona o Bot
-  //     const aiResponse: any = await this.chatbotService.chat(promptDoBot, conversation.customerPhone);
-
-  //     if (aiResponse) {
-  //       await this.sendText(conversation.customerPhone, aiResponse, conversation.id);
-  //     }
-
-  //   } catch (error) {
-  //     console.error('❌ Erro processamento mídia:', error);
-  //     // Mensagem amigável de erro
-  //     await this.sendText(conversation.customerPhone, 'Tive uma pequena instabilidade ao processar seu arquivo. Por favor, tente reenviar a foto.', conversation.id);
-  //   }
-  // }
-
-  private async handleIncomingMedia(
+private async handleIncomingMedia(
     message: IncomingMessage,
     conversation: any
   ) {
     try {
       const workflowStep = conversation.workflowStep?.trim();
-
       const fasesDocs = ['COLETA_DOCS', 'COLETA_DOCS_EXTRA'];
       const estaEmFaseDeDocs = fasesDocs.includes(workflowStep);
 
       // ============================
-      // UX – feedback imediato APENAS se estiver em fase de docs
+      // UX – feedback imediato (Somente para imagens/pdfs)
       // ============================
-      if (workflowStep === "COLETA_DOCS") {
+      if (workflowStep === "COLETA_DOCS" && message.type !== 'audio' && message.type !== 'voice') {
         await this.sendText(
           conversation.customerPhone,
-          'Recebi seu arquivo! 📎\nEstou analisando e validando, aguarde um instante...',
+          'Recebi seu arquivo! 📎\nEstou analisando e salvando, aguarde um instante...',
           conversation.id
         );
       }
 
       // ============================
-      // Identificação da mídia
+      // 1. IDENTIFICAÇÃO DA MÍDIA
       // ============================
       let mediaId = '';
       let mimeType = '';
-      let mediaType: 'image' | 'document' | 'audio' = 'document';
+      let mediaType: 'image' | 'document' | 'audio' | 'video' = 'document';
       let fileName = '';
 
       switch (message.type) {
@@ -349,8 +156,14 @@ export class WhatsappService {
           mediaId = message.document?.id || '';
           mimeType = message.document?.mime_type || 'application/pdf';
           mediaType = 'document';
-          fileName =
-            message.document?.filename || `documento_${Date.now()}.pdf`;
+          fileName = message.document?.filename || `documento_${Date.now()}.pdf`;
+          break;
+
+        case 'video': // 👈 VÍDEO AGORA É RECONHECIDO AQUI
+          mediaId = message.video?.id || '';
+          mimeType = message.video?.mime_type || 'video/mp4';
+          mediaType = 'video';
+          fileName = `video_${Date.now()}.mp4`;
           break;
 
         case 'audio':
@@ -363,84 +176,19 @@ export class WhatsappService {
           break;
       }
 
-
-      if (!mediaId) return;
+      if (!mediaId) {
+        console.warn('⚠️ [Media] Nenhum Media ID encontrado no payload:', message);
+        return;
+      }
 
       // ============================
-      // Download + Upload
+      // 2. DOWNLOAD & UPLOAD PARA O R2
       // ============================
       const fileBuffer = await this.downloadMediaFromMeta(mediaId);
-
-      // // ============================
-      // // 🔊 ÁUDIO → TRANSCRIÇÃO
-      // // ============================
-      // if (mediaType === 'audio') {
-
-      //   // (opcional) upload cloud
-      //   const extension = fileName.split('.').pop() || 'ogg';
-      //   const folder = `clientes/${conversation.customerPhone}`;
-      //   const uploadResult = await this.storageService.uploadFile(
-      //     fileBuffer,
-      //     extension,
-      //     folder
-      //   );
-
-      //   // salva o áudio
-      //   await prisma.message.create({
-      //     data: {
-      //       wa_id: message.id,
-      //       content: uploadResult.url,
-      //       role: 'USER',
-      //       type: 'audio',
-      //       status: 'read',
-      //       conversationId: conversation.id,
-      //       fileName,
-      //     }
-      //   });
-
-      //   // transcrição
-      //   const textoTranscrito =
-      //     await this.chatbotService.transcreverAudio(fileBuffer, mimeType);
-
-      //   // salva texto
-      //   const savedText = await prisma.message.create({
-      //     data: {
-      //       wa_id: `${message.id}_transcript`,
-      //       content: textoTranscrito,
-      //       role: 'USER',
-      //       type: 'text',
-      //       status: 'read',
-      //       conversationId: conversation.id,
-      //     }
-      //   });
-
-      //   this.app.io.emit('new_whatsapp_message', {
-      //     ...savedText,
-      //     conversationId: conversation.id,
-      //   });
-
-      //   // IA responde
-      //   if (!conversation.attendantId) {
-      //     const aiResponse = await this.chatbotService.chat(
-      //       textoTranscrito,
-      //       conversation.customerPhone
-      //     );
-
-      //     if (aiResponse) {
-      //       await this.sendText(
-      //         conversation.customerPhone,
-      //         aiResponse,
-      //         conversation.id
-      //       );
-      //     }
-      //   }
-
-      //   return; // 🔴 CRÍTICO
-      // }
-
       const extension = fileName.split('.').pop() || 'bin';
       const folder = `clientes/${conversation.customerPhone}`;
 
+      // Salva no Cloudflare R2
       const uploadResult = await this.storageService.uploadFile(
         fileBuffer,
         extension,
@@ -448,105 +196,113 @@ export class WhatsappService {
       );
 
       // ============================
-      // Definição de contexto do documento
+      // 3. SE FOR ÁUDIO (TRANSCRIÇÃO E RESPOSTA)
+      // ============================
+      if (mediaType === 'audio') {
+        const textoTranscrito = await this.transcreverAudio(fileBuffer, fileName);
+
+        if (!textoTranscrito) {
+          await this.sendText(
+            conversation.customerPhone,
+            'Desculpe, não consegui entender o áudio. Pode digitar ou gravar novamente?',
+            conversation.id
+          );
+          return; // Só retorna aqui se deu ERRO na transcrição
+        }
+
+        // Salva transcrição no histórico do banco como texto
+        const savedText = await prisma.message.create({
+          data: {
+            wa_id: `${message.id}_transcript`,
+            content: `🎤 Áudio transcrito: "${textoTranscrito}"`,
+            role: 'USER',
+            type: 'text',
+            status: 'read',
+            conversationId: conversation.id,
+          }
+        });
+
+        this.app.io.emit('new_whatsapp_message', { ...savedText, conversationId: conversation.id });
+
+        // Chama a IA para ler e responder o que foi falado no áudio
+        const aiResponse = await this.chatbotService.chat(textoTranscrito, conversation.customerPhone);
+
+        if (aiResponse) {
+          await this.sendText(conversation.customerPhone, aiResponse, conversation.id);
+        }
+
+        // 🔥 RETIRAMOS O RETURN QUE HAVIA AQUI! 
+        // Agora o código vai descer pro passo 4 e salvar o áudio nas provas.
+      }
+
+      // ============================
+      // 4. SALVAR A MÍDIA COMO PROVA (IMAGEM, PDF, VÍDEO E ÁUDIO)
       // ============================
       let tipoDocumento: any = 'COMPLEMENTAR';
       let etapaDocumento: 'ESSENCIAL' | 'COMPLEMENTAR' = 'COMPLEMENTAR';
       let analiseIA: any = null;
 
-      // Apenas na fase COLETA_DOCS existe documento obrigatório
-      if (workflowStep === 'COLETA_DOCS') {
+      // Se for imagem na fase de coleta inicial, tenta OCR
+      if (workflowStep === 'COLETA_DOCS' && mediaType === 'image') {
         const pendentes = await this.getDocumentosPendentes(conversation.id);
 
         if (pendentes.length > 0) {
           tipoDocumento = pendentes[0];
           etapaDocumento = 'ESSENCIAL';
 
-          analiseIA = await this.docAnalysisService.analyzeDocument(
-            fileBuffer,
-            tipoDocumento
-          );
+          analiseIA = await this.docAnalysisService.analyzeDocument(fileBuffer, tipoDocumento);
 
           if (analiseIA?.legivel) {
             if (analiseIA.tipo_identificado === 'CNH') tipoDocumento = 'CNH';
             if (analiseIA.tipo_identificado === 'RG') tipoDocumento = 'RG';
-            if (analiseIA.tipo_identificado === 'COMPROVANTE_RESIDENCIA')
-              tipoDocumento = 'COMP_RES';
+            if (analiseIA.tipo_identificado === 'COMPROVANTE_RESIDENCIA') tipoDocumento = 'COMP_RES';
           }
         }
       }
 
-      // ============================
-      // Persistência do documento
-      // ============================
+      // 👈 APLICANDO OS NOMES CORRETOS PARA ÁUDIO E VÍDEO
+      if (mediaType === 'audio') tipoDocumento = 'AUDIO_WHATSAPP';
+      if (mediaType === 'video') tipoDocumento = 'VIDEO_WHATSAPP';
 
       tipoDocumento = normalizarTipoDocumento(tipoDocumento);
 
+      // 👉 SALVA NO BANCO (Aparece no Drawer de "Provas Complementares")
       await prisma.conversationDocument.create({
         data: {
           conversationId: conversation.id,
           tipo: tipoDocumento,
           etapa: etapaDocumento,
-          mediaUrl: uploadResult.url,
+          mediaUrl: uploadResult.url, 
           fileName: `${tipoDocumento}.${extension}`,
           mimeType,
-          validado: etapaDocumento === 'COMPLEMENTAR'
-            ? true
-            : analiseIA?.legivel ?? false,
-          extractedData:
-            etapaDocumento === 'ESSENCIAL' ? analiseIA ?? {} : {},
+          validado: etapaDocumento === 'COMPLEMENTAR' ? true : analiseIA?.legivel ?? false,
+          extractedData: etapaDocumento === 'ESSENCIAL' ? analiseIA ?? {} : {},
         },
       });
 
-      // ============================
-      // Atualiza tempData (se OCR válido)
-      // ============================
-      if (
-        etapaDocumento === 'ESSENCIAL' &&
-        analiseIA &&
-        analiseIA.legivel
-      ) {
+      // Atualiza OCR no banco se tiver extraído algo
+      if (etapaDocumento === 'ESSENCIAL' && analiseIA?.legivel) {
         const patch: any = {};
-
-        if (analiseIA.lado === 'FRENTE_E_VERSO') {
-          patch.extracted_RG_FRENTE_legivel = true;
-          patch.extracted_RG_VERSO_legivel = true;
-        }
-
-        if (analiseIA.lado === 'FRENTE') {
-          patch.extracted_RG_FRENTE_legivel = true;
-        }
-
-        if (analiseIA.lado === 'VERSO') {
-          patch.extracted_RG_VERSO_legivel = true;
-        }
-
+        if (analiseIA.lado === 'FRENTE_E_VERSO') { patch.extracted_RG_FRENTE_legivel = true; patch.extracted_RG_VERSO_legivel = true; }
+        if (analiseIA.lado === 'FRENTE') patch.extracted_RG_FRENTE_legivel = true;
+        if (analiseIA.lado === 'VERSO') patch.extracted_RG_VERSO_legivel = true;
 
         await prisma.conversation.update({
           where: { id: conversation.id },
           data: {
             tempData: {
               ...(conversation.tempData as object ?? {}),
-              [`extracted_${tipoDocumento}_nome`]:
-                analiseIA.nome_completo,
-              [`extracted_${tipoDocumento}_rg`]:
-                analiseIA.rg_numero,
-              [`extracted_${tipoDocumento}_cpf`]:
-                analiseIA.cpf_numero,
-              [`extracted_${tipoDocumento}_endereco`]:
-                analiseIA.endereco_completo,
+              [`extracted_${tipoDocumento}_nome`]: analiseIA.nome_completo,
+              [`extracted_${tipoDocumento}_rg`]: analiseIA.rg_numero,
+              [`extracted_${tipoDocumento}_cpf`]: analiseIA.cpf_numero,
+              [`extracted_${tipoDocumento}_endereco`]: analiseIA.endereco_completo,
               [`extracted_${tipoDocumento}_legivel`]: true,
             },
           },
-
         });
-        console.log(`✅ Dados extraídos do ${tipoDocumento}:`, analiseIA);
-
       }
 
-      // ============================
-      // Log da mensagem no chat
-      // ============================
+      // Loga a mídia visualmente no Chat do Painel
       const savedMessage = await prisma.message.create({
         data: {
           wa_id: message.id,
@@ -559,91 +315,54 @@ export class WhatsappService {
         },
       });
 
-      this.app.io.emit('new_whatsapp_message', {
-        ...savedMessage,
-        conversationId: conversation.id,
-      });
+      this.app.io.emit('new_whatsapp_message', { ...savedMessage, conversationId: conversation.id });
 
       // ============================
-      // RESPOSTA DO BOT (somente em fases de docs)
+      // 5. RESPOSTA DO BOT PÓS-MÍDIA
       // ============================
-      if (!estaEmFaseDeDocs) return;
+      
+      // 🔴 SE FOR ÁUDIO, PARA AQUI! O bot já respondeu no passo 3 baseado no texto transcrito.
+      // E se o cliente não estiver na fase de coleta de documentos, também para aqui.
+      if (mediaType === 'audio' || !estaEmFaseDeDocs) return;
 
-      let promptDoBot = '';
+      const pendentesAgora = await this.getDocumentosPendentes(conversation.id);
 
-      const pendentesAgora = await this.getDocumentosPendentes(
-        conversation.id
-      );
-
-      // === FASE EXTRA ===
       if (workflowStep === 'COLETA_DOCS_EXTRA') {
-        // Apenas confirma recebimento visual
         await this.sendText(
           conversation.customerPhone,
-          'Recebi seu arquivo!',
+          'Mídia recebida! Pode continuar enviando provas ou digite *FINALIZAR*.',
           conversation.id
         );
-
-        return; // 🔴 ISSO É CRÍTICO
-      }
-
-      // === ACABARAM OS OBRIGATÓRIOS AGORA ===
+        return; 
+      } 
       else if (pendentesAgora.length === 0) {
         await prisma.conversation.update({
           where: { id: conversation.id },
           data: { workflowStep: 'COLETA_DOCS_EXTRA' },
         });
-
-        const tipoCaso = conversation.tipoCaso || 'seu caso';
-
-        promptDoBot = `
+        const promptDoBot = `
 [SISTEMA]:
 Perfeito! Recebemos todas as documentações básicas.
-Explique que agora ele pode enviar provas adicionais (fotos, vídeos, áudios, prints) para reforçar ${tipoCaso}.
-Diga que quando terminar, deve digitar FINALIZAR.
-`;
-      }
-
-      // === AINDA FALTAM DOCUMENTOS ===
+Explique que agora ele pode enviar provas adicionais (fotos, vídeos, áudios, prints).
+Diga que quando terminar, deve digitar FINALIZAR.`;
+        const aiResponse = await this.chatbotService.chat(promptDoBot, conversation.customerPhone);
+        if (aiResponse) await this.sendText(conversation.customerPhone, aiResponse, conversation.id);
+      } 
       else {
         const proximo = pendentesAgora[0];
-        let nomeProximo = proximo;
-
-        if (proximo === 'RG') nomeProximo = 'RG ou CNH (foto legível)';
-        if (proximo === 'COMP_RES')
-          nomeProximo = 'Comprovante de Residência';
-
-        const feedback =
-          analiseIA && !analiseIA.legivel
-            ? `A imagem enviada ficou um pouco ilegível, mas seguimos com o processo.`
-            : `Documento recebido com sucesso.`;
-
-        promptDoBot = `
-[SISTEMA]:
-${feedback}
-Peça imediatamente o próximo documento: ${nomeProximo}.
-Seja claro e direto.
-`;
+        let nomeProximo = proximo === 'RG' ? 'RG ou CNH (foto legível)' : 'Comprovante de Residência';
+        const feedback = analiseIA && !analiseIA.legivel ? `A imagem enviada ficou um pouco ilegível.` : `Recebido com sucesso.`;
+        
+        const promptDoBot = `[SISTEMA]: ${feedback}. Peça imediatamente o próximo documento: ${nomeProximo}.`;
+        const aiResponse = await this.chatbotService.chat(promptDoBot, conversation.customerPhone);
+        if (aiResponse) await this.sendText(conversation.customerPhone, aiResponse, conversation.id);
       }
 
-      const aiResponse = await this.chatbotService.chat(
-        promptDoBot,
-        conversation.customerPhone
-      );
-
-      if (aiResponse) {
-        await this.sendText(
-          conversation.customerPhone,
-          aiResponse,
-          conversation.id
-        );
-      }
     } catch (error) {
       console.error('❌ Erro processamento mídia:', error);
-
       await this.sendText(
         conversation.customerPhone,
-        'Tive uma instabilidade ao processar o arquivo. Pode tentar reenviar?',
+        'Tive um problema ao processar seu arquivo. Pode tentar enviar de novo?',
         conversation.id
       );
     }
@@ -1123,6 +842,32 @@ Seja claro e direto.
     if (mime.startsWith('image/')) return 'image';
     if (mime.startsWith('audio/') || mime.includes('ogg') || mime.includes('opus')) return 'audio';
     return 'document';
+  }
+
+    async transcreverAudio(audioBuffer: Buffer, fileName: string): Promise<string> {
+      try {
+        console.log('🎙️ [ÁUDIO] Enviando para transcrição (Groq Whisper)...');
+        
+        const formData = new FormData();
+        // O Whisper exige um nome de arquivo com extensão (.ogg que é o padrão do zap)
+        formData.append('file', audioBuffer, { filename: fileName });
+        formData.append('model', 'whisper-large-v3-turbo'); // Modelo super rápido da Groq
+        formData.append('response_format', 'json');
+        formData.append('language', 'pt'); // Força o português
+  
+        const response = await axios.post('https://api.groq.com/openai/v1/audio/transcriptions', formData, {
+          headers: {
+            ...formData.getHeaders(),
+            'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
+          }
+        });
+  
+        console.log(`✨ [ÁUDIO TRANSCRITO]: "${response.data.text}"`);
+        return response.data.text;
+      } catch (error) {
+        console.error('❌ Erro ao transcrever áudio:', error);
+        return "";
+      }
   }
 
 }
