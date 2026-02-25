@@ -1,7 +1,6 @@
 import { prisma } from '../../lib/prisma.js';
 import { ChatbotService } from '../../infra/services/chatbot-service.js';
 import { StorageService } from '../../infra/services/storage.service.js'; // <--- IMPORTANTE
-import FormData from 'form-data';
 import axios from 'axios';
 import type { FastifyInstance } from 'fastify';
 import type { IncomingMessage, MetaMessagePayload } from './whatsapp.types.js';
@@ -780,21 +779,25 @@ Diga que quando terminar, deve digitar FINALIZAR.`;
   // }
 
   // --- Auxiliar: Upload para Meta (Versão Buffer) ---
-  private async uploadMediaToMeta(fileBuffer: Buffer, mimeType: string, fileName: string): Promise<string> {
+ private async uploadMediaToMeta(fileBuffer: Buffer, mimeType: string, fileName: string): Promise<string> {
+    // Usa o FormData nativo do Node.js
     const form = new FormData();
 
-    // O 'file' precisa ter filename nas opções para a Meta aceitar corretamente
-    form.append('file', fileBuffer, { filename: fileName, contentType: mimeType });
+    // Converte o Buffer para Blob, que é o formato nativo exigido pelo fetch moderno
+    const fileBlob = new Blob([new Uint8Array(fileBuffer)], { type: mimeType });
+    // A sintaxe nativa não usa objeto de opções, passamos o nome direto no terceiro parâmetro
+    form.append('file', fileBlob, fileName);
     form.append('type', mimeType);
     form.append('messaging_product', 'whatsapp');
 
     const response = await fetch(`https://graph.facebook.com/${this.version}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/media`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${this.token}`,
-        ...form.getHeaders() // Importante para o multipart/form-data funcionar com Buffer
+        'Authorization': `Bearer ${this.token}`
+        // IMPORTANTE: NÃO passamos mais o ...form.getHeaders() nem Content-Type.
+        // O fetch nativo é inteligente e cria o multipart/form-data com o boundary correto sozinho.
       },
-      body: form
+      body: form // Agora sim o TypeScript aceita!
     });
 
     if (!response.ok) {
@@ -843,20 +846,24 @@ Diga que quando terminar, deve digitar FINALIZAR.`;
     return 'document';
   }
 
-    async transcreverAudio(audioBuffer: Buffer, fileName: string): Promise<string> {
+async transcreverAudio(audioBuffer: Buffer, fileName: string): Promise<string> {
       try {
         console.log('🎙️ [ÁUDIO] Enviando para transcrição (Groq Whisper)...');
         
         const formData = new FormData();
+        // Converte o Buffer para Blob (Padrão nativo)
+        const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: 'audio/ogg' });
+
         // O Whisper exige um nome de arquivo com extensão (.ogg que é o padrão do zap)
-        formData.append('file', audioBuffer, { filename: fileName });
+        formData.append('file', audioBlob, fileName);
         formData.append('model', 'whisper-large-v3-turbo'); // Modelo super rápido da Groq
         formData.append('response_format', 'json');
         formData.append('language', 'pt'); // Força o português
   
         const response = await axios.post('https://api.groq.com/openai/v1/audio/transcriptions', formData, {
           headers: {
-            ...formData.getHeaders(),
+            // Não usamos mais formData.getHeaders(), o Axios cuida disso automaticamente
+            // quando recebe um FormData nativo no Node moderno.
             'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
           }
         });
