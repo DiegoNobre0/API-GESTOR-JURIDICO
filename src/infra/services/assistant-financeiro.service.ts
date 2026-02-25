@@ -1,7 +1,7 @@
 import { generateObject } from 'ai';
 import { z } from 'zod';
-import { FinanceiroService } from '@/modules/financeiro/financeiro.service.js';
-import { AgendaService } from '@/modules/agenda/agenda.service.js';
+import { FinanceiroService } from '../../modules/financeiro/financeiro.service.js';
+import { AgendaService } from '../../modules/agenda/agenda.service.js';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 
 // 🧠 CACHE EM MEMÓRIA: Guarda as ações pendentes de confirmação

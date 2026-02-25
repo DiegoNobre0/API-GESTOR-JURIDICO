@@ -2,7 +2,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ClientesService } from './clientes.service.js';
 import { z } from 'zod';
-import { prisma } from '@/lib/prisma.js';
+import { prisma } from '../../lib/prisma.js';
 
 export class ClientesController {
   private service = new ClientesService();

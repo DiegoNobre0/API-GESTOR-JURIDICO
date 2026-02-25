@@ -2929,21 +2929,26 @@ Seja claro e direto.
       }
     });
   }
-  async findOrCreateConversation(phone, name) {
-    let conversation = await prisma.conversation.findUnique({ where: { customerPhone: phone } });
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: {
-          customerPhone: phone,
-          customerName: name || phone,
-          status: "OPEN",
-          channel: "whatsapp",
-          unreadCount: 0
-        }
-      });
-    }
-    return conversation;
+  
+async findOrCreateConversation(phone, name) {
+  let conversation = await prisma.conversation.findUnique({
+    where: { customerPhone: phone }
+  });
+
+  if (!conversation) {
+    conversation = await prisma.conversation.create({
+      data: {
+        customerPhone: phone,
+        customerName: name,
+        status: "OPEN",
+        workflowStep: "COLETA_FATOS",
+        presentedAt: null
+      }
+    });
   }
+
+  return conversation;
+}
   // private async uploadMediaToMeta(filePath: string, mimeType: string): Promise<string> {
   //   const form = new FormData();
   //   const fileBuffer = fs.readFileSync(filePath);

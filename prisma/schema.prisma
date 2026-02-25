@@ -254,7 +254,7 @@ model Conversation {
 
   // Snapshot da última mensagem para a Sidebar carregar rápido
   lastMessageBody String?
-  lastMessageTime DateTime @default(now())
+  lastMessageTime DateTime @default(now())  
 
   // Tags (Array de strings no Mongo)
   tags String[] @default([])
@@ -266,7 +266,7 @@ model Conversation {
   // Relacionamento com Advogado/Atendente (Quem assumiu)
   attendantId  String? @db.ObjectId
   attendant    User?   @relation(fields: [attendantId], references: [id])
-
+  lastCustomerMessageAt DateTime?
   // Relacionamento com Mensagens
   messages  Message[]
   documents ConversationDocument[]

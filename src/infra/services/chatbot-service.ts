@@ -7,7 +7,8 @@ import { prisma } from '../../lib/prisma.js';
 
 import { detectGreeting } from './utils/greeting.util.js';
 import type { ModelMessage } from 'ai';
-import { AdvogadoAssistantService } from './advogado-assistant.service.js';
+import { AdvogadoAssistantService } from './assistant-financeiro.service.js';
+
 
 
 
@@ -293,37 +294,37 @@ export class ChatbotService {
 
     // Limpa o número para comparar apenas os dígitos (ex: 5511999999999)
     // 1. Limpa tudo que não for número (ex: remove @c.us se tiver)
-    // let numeroLimpo = customerPhone.replace(/\D/g, '');
+    let numeroLimpo = customerPhone.replace(/\D/g, '');
 
     // 2. Se vier com o código do Brasil (55) e tiver tamanho suficiente, remove o 55
-    // if (numeroLimpo.length >= 12 && numeroLimpo.startsWith('55')) {
-    //   numeroLimpo = numeroLimpo.substring(2);
-    // }
+    if (numeroLimpo.length >= 12 && numeroLimpo.startsWith('55')) {
+      numeroLimpo = numeroLimpo.substring(2);
+    }
 
     // Agora temos algo como "7181482521" (10 dígitos) ou "71981482521" (11 dígitos)
     // 3. Fatiamos as partes que NUNCA mudam
-    // const ddd = numeroLimpo.substring(0, 2);            
-    // const final4 = numeroLimpo.slice(-4);                
-    // const meio4 = numeroLimpo.slice(-8, -4);             
+    const ddd = numeroLimpo.substring(0, 2);            
+    const final4 = numeroLimpo.slice(-4);                
+    const meio4 = numeroLimpo.slice(-8, -4);             
 
     // 4. Busca flexível: Tem que ter o DDD e as duas metades, ignorando formatação do banco
-    // const advogado = await prisma.user.findFirst({
-    //   where: {
-    //     AND: [
-    //       { telefone: { contains: ddd } },
-    //       { telefone: { contains: meio4 } },
-    //       { telefone: { contains: final4 } }
-    //     ],
-    //     ativo: true // Segurança extra
-    //   }
-    // });
+    const advogado = await prisma.user.findFirst({
+      where: {
+        AND: [
+          { telefone: { contains: ddd } },
+          { telefone: { contains: meio4 } },
+          { telefone: { contains: final4 } }
+        ],
+        ativo: true // Segurança extra
+      }
+    });
 
     // Se for o advogado, intercepta a mensagem e envia pro Assistente Pessoal dele
-    // if (advogado) {
-    //   const assistente = new AdvogadoAssistantService();
-    //   const resposta = await assistente.processarComando(texto, advogado.id);
-    //   return resposta;
-    // }
+    if (advogado) {
+      const assistente = new AdvogadoAssistantService();
+      const resposta = await assistente.processarComando(texto, advogado.id);
+      return resposta;
+    }
 
     let estadoAtual = conversation.workflowStep as WorkflowStep;
     let tipoCaso = (conversation.tipoCaso as TipoCaso) ?? 'GERAL';
