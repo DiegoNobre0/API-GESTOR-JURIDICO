@@ -14,6 +14,10 @@ export async function financeiroModule(app: FastifyInstance) {
     group.get("/", (req, res) => controller.list(req, res));
     group.get("/resumo", (req, res) => controller.resumo(req, res));
     group.post("/", (req, res) => controller.create(req, res));
+    
+    // 👇 NOVA ROTA ADICIONADA: Rota para atualizar (editar) a transação
+    group.put("/:id", (req, res) => controller.update(req, res)); 
+    
     group.delete("/:id", (req, res) => controller.delete(req, res));
     
   }, { prefix: '/financeiro' });

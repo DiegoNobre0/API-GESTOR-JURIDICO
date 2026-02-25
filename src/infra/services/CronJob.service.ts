@@ -5,6 +5,10 @@ import { prisma } from '../../lib/prisma.js';
 import { DatajudService } from './datajud.service.js';
 import { MailService } from './mail-service.js';
 
+
+console.log('📌 [SISTEMA] Arquivo de agendamento do Datajud (04h00) carregado na memória!');
+
+
 cron.schedule('0 4 * * *', async () => {
   console.log('⏳ [CRON] Iniciando monitoramento inteligente...');
 

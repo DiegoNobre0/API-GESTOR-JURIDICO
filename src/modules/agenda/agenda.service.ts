@@ -2,25 +2,37 @@ import { prisma } from "../../lib/prisma.js";
 
 export class AgendaService {
 
-  // ✅ FUNÇÃO LIMPA: Se o campo vier vazio, converte para undefined
-  private formatarProcessoId(id?: string) {
+  // ✅ FUNÇÃO LIMPA: Se o campo vier vazio, converte para null
+  private formatarProcessoId(id?: string | null) {
     const limpo = id?.trim();
-    return limpo ? limpo : undefined;
+    return limpo ? limpo : null;
   }
 
-  // Criar Compromisso
+  // ---------------------------------------------------------
+  // 1. CRIAR COMPROMISSO
+  // ---------------------------------------------------------
   async createCompromisso(data: any, userId: string) {
     return prisma.compromisso.create({
       data: {
-        ...data,
+        titulo: data.titulo,
+        description: data.description,
+        startDate: data.startDate,
+        endDate: data.endDate,
+        tipo: data.tipo,
+        location: data.location,
         processoId: this.formatarProcessoId(data.processoId), 
         userId,
       },
-      include: { user: { select: { nome: true } } }
+      include: { 
+        user: { select: { nome: true } }, 
+        processo: { select: { clienteNome: true, numeroCNJ: true } }
+      }
     });
   }
 
-  // Criar Tarefa
+  // ---------------------------------------------------------
+  // 2. CRIAR TAREFA
+  // ---------------------------------------------------------
   async addTarefa(data: any, userId: string) {
     return prisma.tarefa.create({
       data: {
@@ -29,11 +41,13 @@ export class AgendaService {
         userId, 
         concluida: false
       },
-      include: { user: { select: { nome: true } } }
+      include: { user: { select: { nome: true } } } 
     });
   }
 
-  // Concluir Tarefa
+  // ---------------------------------------------------------
+  // 3. CONCLUIR TAREFA
+  // ---------------------------------------------------------
   async completeTarefa(id: string) {
     return prisma.tarefa.update({
       where: { id },
@@ -41,13 +55,18 @@ export class AgendaService {
     });
   }
 
-  // Listagem Unificada
+  // ---------------------------------------------------------
+  // 4. LISTAR TUDO (Agenda e Tarefas)
+  // ---------------------------------------------------------
   async listAll(userId: string) {
     const [compromissos, tarefas] = await Promise.all([
       prisma.compromisso.findMany({
         where: { userId },
         orderBy: { startDate: 'asc' },
-        include: { user: { select: { nome: true } } }
+        include: { 
+            user: { select: { nome: true } },
+            processo: { select: { clienteNome: true, numeroCNJ: true } } 
+        }
       }),
       prisma.tarefa.findMany({
         where: { userId, concluida: false },
@@ -59,9 +78,13 @@ export class AgendaService {
     return { compromissos, tarefas };
   }
 
+  // ---------------------------------------------------------
+  // 5. DELETAR COMPROMISSO
+  // ---------------------------------------------------------
   async delete(id: string) {
-    return prisma.compromisso.delete({
-      where: { id },
+    const deletado = await prisma.compromisso.deleteMany({
+      where: { id: id }
     });
+    return deletado;
   }
 }

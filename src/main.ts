@@ -7,15 +7,19 @@ import cron from 'node-cron';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 
-// --- IMPORTAÇÕES ---
-import { prisma } from "./lib/prisma.js";
+// --- IMPORTAÇÕES INTERNAS ---
 import { MailService } from './infra/services/mail-service.js';
+import { NotifyDailyAgendaService } from './modules/agenda/notify-daily-agenda.service.js';
 
+// 👇 AQUI ESTÁ O SEGREDO: Importar o arquivo do cron do Datajud
+// (Ajuste o caminho para onde o seu arquivo datajud.cron.ts realmente está)
+import '../src/infra/services/CronJob.service.js'; 
+
+// --- IMPORTAÇÕES DE MÓDULOS ---
 import { authModule } from './modules/auth/auth.module.js';
 import { dashboardModule } from './modules/dashboard/dashboard.module.js';
 import { processosModule } from './modules/processos/processos.module.js';
 import { usersModule } from './modules/users/users.module.js';
-import { NotifyDailyAgendaService } from './modules/agenda/notify-daily-agenda.service.js';
 import { whatsappModule } from './modules/whatsapp/whatsapp.module.js';
 import { webhookModule } from './infra/controllers/webhook.module.js';
 import { leadsModule } from './modules/leads/leads.module.js';
@@ -29,37 +33,24 @@ const app = Fastify({ logger: true });
 /* =======================================================
    1️⃣ PLUGINS
 ======================================================= */
-
-app.register(fastifyJwt, {
-  secret: process.env.JWT_SECRET || 'secret-2026'
-});
+app.register(fastifyJwt, { secret: process.env.JWT_SECRET || 'secret-2026' });
 
 app.register(cors, {
-  origin: process.env.NODE_ENV === 'production'
-    ? ["https://gestor-juridico-front.vercel.app"]
-    : true,
+  origin: process.env.NODE_ENV === 'production' ? ["https://gestor-juridico-front.vercel.app"] : true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 });
 
-app.register(multipart, {
-  limits: {
-    fileSize: 10 * 1024 * 1024,
-  }
-});
+app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
 
 app.decorate("authenticate", async (request: any, reply: any) => {
-  try {
-    await request.jwtVerify();
-  } catch {
-    reply.status(401).send({ message: "Sessão expirada ou inválida." });
-  }
+  try { await request.jwtVerify(); } 
+  catch { reply.status(401).send({ message: "Sessão expirada ou inválida." }); }
 });
 
 /* =======================================================
-   2️⃣ MÓDULOS
+   2️⃣ MÓDULOS (ROTAS)
 ======================================================= */
-
 app.register(authModule);
 app.register(dashboardModule);
 app.register(processosModule);
@@ -73,53 +64,45 @@ app.register(agendaRoutes);
 app.register(clientesRoutes, { prefix: 'clientes' });
 
 /* =======================================================
-   3️⃣ CRON LOCAL
+   3️⃣ JOBS AGENDADOS (CRON)
 ======================================================= */
-
 const mailService = new MailService();
 
+// 🕒 ROTINA 1: Resumo da Agenda (Todo dia às 18:00)
 cron.schedule('0 18 * * *', async () => {
-  app.log.info("📅 [SCHEDULER] Iniciando notificações de agenda...");
+  app.log.info("📅 [CRON] Iniciando notificações de agenda (18h00)...");
   const notifyService = new NotifyDailyAgendaService(mailService);
   try {
     await notifyService.execute();
+    app.log.info("✅ [CRON] Notificações de agenda enviadas.");
   } catch (err: any) {
-    app.log.error("❌ Falha no scheduler local:", err);
+    app.log.error("❌ Falha no cron de agenda:", err);
   }
 });
 
-/* =======================================================
-   4️⃣ START SERVER COM SOCKET (VPS)
-======================================================= */
+// A ROTINA 2 (Datajud) já foi ativada automaticamente lá no topo do arquivo 
+// com o import './modules/processos/datajud.cron.js';
 
 /* =======================================================
    4️⃣ START SERVER COM SOCKET (VPS)
 ======================================================= */
-
 async function start() {
   try {
-    // 1. Instancie o Socket.io usando o servidor interno do Fastify (app.server)
     const io = new SocketIOServer(app.server, {
-      cors: {
-        origin: '*', // depois coloque domínio do front
-      },
+      cors: { origin: '*' },
     });
 
-    // 2. Disponibilize o 'io' dentro do Fastify ANTES de iniciar a aplicação
     app.decorate('io', io);
 
-    // 3. Configure os eventos do Socket
     io.on('connection', (socket) => {
-      console.log('🟢 Cliente conectado:', socket.id);
-
+      console.log('🟢 Cliente conectado ao Socket:', socket.id);
       socket.on('disconnect', () => {
-        console.log('🔴 Cliente desconectado:', socket.id);
+        console.log('🔴 Cliente desconectado do Socket:', socket.id);
       });
     });
 
-    // 4. Inicie o Fastify. O método listen já lida com a preparação interna.
     await app.listen({ port: 3333, host: '0.0.0.0' });
-    console.log("🚀 RCS Advogados rodando com Socket na porta 3333");
+    console.log("🚀 Nobre Gestão Jurídica rodando com Socket na porta 3333");
 
   } catch (err) {
     app.log.error(err);

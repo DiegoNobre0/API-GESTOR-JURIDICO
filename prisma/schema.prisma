@@ -110,7 +110,7 @@ model Cliente {
     // --- VINCULAÇÃO COM CONVERSA (WHATSAPP) ---
     conversationId  String?       @db.ObjectId
     conversation    Conversation? @relation(fields: [conversationId], references: [id])
-    
+    compromissos    Compromisso[]
     dataArquivamento DateTime?
     arquivado      Boolean  @default(false)
     createdAt      DateTime @default(now())
@@ -139,18 +139,21 @@ model ProcessoArquivo {
 
 model Compromisso {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  startDate   DateTime
   titulo      String
   description String?
-  tipo        String   @default("outro")
-  concluido   Boolean  @default(false)
+  startDate   DateTime
+  endDate     DateTime? // 👈 ADICIONADO AQUI
+  
+  tipo        String   @default("reuniao") // audiencia, reuniao, prazo, outro
   location    String?
-  // Relacionamento com User
-  userId String @db.ObjectId
-  user   User   @relation(fields: [userId], references: [id])
+  processoId  String?  @db.ObjectId
+  processo    Processo? @relation(fields: [processoId], references: [id])
 
-  processoId String?  
-  createdAt  DateTime @default(now())
+  userId      String   @db.ObjectId
+  user        User     @relation(fields: [userId], references: [id])
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt 
 
   @@map("compromissos")
 }
@@ -188,7 +191,7 @@ model Transacao {
   recorrente       Boolean @default(false)
   mesesRecorrencia Int?
   arquivado        Boolean @default(false)
-
+  grupoRecorrenciaId String?
   // Relacionamento com User
   createdBy String @db.ObjectId
   user      User   @relation(fields: [createdBy], references: [id])
