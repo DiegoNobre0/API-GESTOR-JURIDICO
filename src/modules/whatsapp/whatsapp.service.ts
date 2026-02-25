@@ -3,7 +3,6 @@ import { ChatbotService } from '../../infra/services/chatbot-service.js';
 import { StorageService } from '../../infra/services/storage.service.js'; // <--- IMPORTANTE
 import FormData from 'form-data';
 import axios from 'axios';
-import fetch from 'node-fetch';
 import type { FastifyInstance } from 'fastify';
 import type { IncomingMessage, MetaMessagePayload } from './whatsapp.types.js';
 import { DocumentAnalysisService } from '../../infra/services/document-analysis.service.js';
