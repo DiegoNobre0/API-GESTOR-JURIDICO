@@ -286,7 +286,7 @@ export class ChatbotService {
 
       return "♻️ *Histórico resetado!* Seus dados e documentos foram apagados. Você já pode enviar um 'Oi' para iniciar um novo teste.";
     }
-
+if (texto.toLowerCase() === '/dados') {
     // ====================================================================
     // NOVO: BLOCO DO ADVOGADO (ADMIN ROUTER)
     // Verifica se o número do remetente pertence a um Advogado cadastrado
@@ -325,6 +325,7 @@ export class ChatbotService {
       const resposta = await assistente.processarComando(texto, advogado.id);
       return resposta;
     }
+  }
 
     let estadoAtual = conversation.workflowStep as WorkflowStep;
     let tipoCaso = (conversation.tipoCaso as TipoCaso) ?? 'GERAL';
