@@ -278,12 +278,7 @@ export class ChatbotService {
     assertConversation(conversation);
 
     const texto = message.trim();
-    const agora = new Date();
-
-    if (conversation.workflowStep === 'FINALIZADO') {
-      return this.handleRetornoCliente(texto, conversation);
-    }
-
+    const agora = new Date();   
 
 
     if (this.detectPedidoAjuda(texto)) {
@@ -339,6 +334,11 @@ export class ChatbotService {
         return resposta;
       }
     }
+
+     if (conversation.workflowStep === 'FINALIZADO') {
+      return this.handleRetornoCliente(texto, conversation);
+    }
+
 
     let estadoAtual = conversation.workflowStep as WorkflowStep;
 
