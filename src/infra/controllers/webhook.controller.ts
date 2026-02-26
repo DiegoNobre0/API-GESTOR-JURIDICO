@@ -51,10 +51,10 @@ export class WebhookController {
 
     // 3. Upload para Cloudflare R2
     const extension = mimeType.split('/')[1] || 'jpg';
-    
+
     // Define a pasta no R2 (ex: clientes/551199999/RG.jpg)
     const folder = `clientes/${customerPhone}`;
-    
+
     const uploadResult = await this.storage.uploadFile(fileBuffer, extension, folder);
 
     // 4. Salvar no Banco (O PULO DO GATO)
@@ -65,9 +65,17 @@ export class WebhookController {
         role: 'USER',
         type: 'document',
         content: uploadResult.url, // URL pública da imagem
-        fileName: `${docTypeTag}.${extension}`, 
+        fileName: `${docTypeTag}.${extension}`,
       },
     });
+
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastCustomerMessageAt: new Date(),
+        fallbackStage: 0
+      }
+    })
 
     console.log(`[Webhook] Documento salvo no banco: ${docTypeTag}.${extension}`);
 
@@ -78,53 +86,7 @@ export class WebhookController {
     return response;
   }
 
-  /**
-   * Webhook do ZapSign (Documentos Assinados)
-   */
-  async handleZapSign(req: FastifyRequest, reply: FastifyReply) {
-    const data = req.body as any;
-
-    console.log("🔔 Webhook ZapSign Recebido:", data.event_type);
-
-    // Verificamos se o evento é "Documento Assinado"
-    if (data.event_type === 'doc_signed') {
-      const signers = data.payload.signers;
-
-      // Vamos procurar quem é o cliente pelo email ou nome que voltou
-      for (const signer of signers) {
-        if (signer.status === 'signed') {
-          console.log(`✅ Assinado por: ${signer.email}`);
-
-          // 1. Acha o cliente no banco
-          const conversa = await prisma.conversation.findFirst({
-            where: {
-              OR: [
-                { customerName: signer.name }, // Busca por nome
-                // { customerEmail: signer.email } // Se tiver email no banco, descomente
-              ],
-            },
-          });
-
-          if (conversa) {
-            // 2. Atualiza o status para FINALIZADO
-            await prisma.conversation.update({
-              where: { id: conversa.id },
-              data: { workflowStep: 'FINALIZADO' },
-            });
-
-            console.log(`🚀 Workflow do cliente ${conversa.customerName} movido para FINALIZADO.`);
-            
-            // Opcional: Avisar o cliente no WhatsApp
-            // await this.chatbot.enviarMensagemAtiva(conversa.customerPhone, "Recebemos sua assinatura! Processo finalizado.");
-          } else {
-             console.log(`⚠️ Cliente não encontrado para assinatura de: ${signer.name}`);
-          }
-        }
-      }
-    }
-
-    return reply.status(200).send({ received: true });
-  }
+  
 
   /**
    * Helper Privado: Verifica quais documentos faltam
@@ -143,7 +105,7 @@ export class WebhookController {
     // Defina sua lista base (Sincronize isso com o ChatbotService se possível para não duplicar código)
     // O ideal seria importar essa constante de um arquivo 'constants.ts' ou 'types.ts'
     const checklistBase = ['RG', 'COMP_RES'];
-    
+
     // Se quiser lógica específica por tipo de caso (ex: VOO), adicione aqui:
     // if (conversation.tipoCaso === 'VOO') checklistBase.push('PASSAGEM');
 

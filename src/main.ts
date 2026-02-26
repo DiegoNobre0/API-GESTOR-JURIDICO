@@ -27,6 +27,8 @@ import { uploadRoutes } from './modules/processos/upload.controller.js';
 import { clientesRoutes } from './modules/cliente/clientes.module.js';
 import { financeiroModule } from './modules/financeiro/financeiro.module.js';
 import { agendaRoutes } from './modules/agenda/agenda.routes.js';
+import { verificarFallbacks } from './infra/workers/fallback.worker.js';
+import { fallbackModule } from './infra/workers/fallback.routes.js';
 
 const app = Fastify({ logger: true });
 
@@ -62,6 +64,7 @@ app.register(leadsModule, { prefix: 'leads' });
 app.register(uploadRoutes);
 app.register(agendaRoutes);
 app.register(clientesRoutes, { prefix: 'clientes' });
+app.register(fallbackModule)
 
 /* =======================================================
    3️⃣ JOBS AGENDADOS (CRON)
@@ -109,5 +112,15 @@ async function start() {
     process.exit(1);
   }
 }
+
+// 🔁 Scheduler de Fallback
+setInterval(async () => {
+  try {
+    console.log("⏱️ Verificando fallbacks...")
+    await verificarFallbacks()
+  } catch (err) {
+    console.error("Erro no fallback worker:", err)
+  }
+}, 1000 * 60 * 5) // a cada 5 minutos
 
 start();

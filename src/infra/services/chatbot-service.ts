@@ -8,6 +8,7 @@ import { prisma } from '../../lib/prisma.js';
 import { detectGreeting } from './utils/greeting.util.js';
 import type { ModelMessage } from 'ai';
 import { AdvogadoAssistantService } from './assistant-financeiro.service.js';
+import { MailService } from './mail-service.js';
 
 
 
@@ -138,6 +139,8 @@ function assertConversation(
   }
 }
 
+const mail = new MailService();
+
 async function classificarTipoCasoPorFatos(fatos: {
   dinamica_do_dano?: string;
   empresa?: string;
@@ -227,6 +230,9 @@ const CHECKLISTS: Record<TipoCaso, DocumentoChecklist[]> = {
     { codigo: 'PASSAGEM', descricao: 'Passagens aéreas' },
     { codigo: 'ATRASO', descricao: 'Comprovante do atraso/cancelamento' },
     { codigo: 'GASTOS', descricao: 'Gastos extras' },
+    { codigo: 'RIB', descricao: 'RIB - Registro de incidente da bagagem' },
+    { codigo: 'OBS1', descricao: 'Qualquer tipo de documento adicional que você julgar importante' },
+    { codigo: 'OBS', descricao: 'Caso você ainda não tenha feito uma reclamação, será necessário registrar no site *consumidor.gov.br* contra a companhia aérea. Se tiver dúvidas, nosso atendimento irá te orientar.' },
   ],
   BANCO: [
     { codigo: 'EXTRATO', descricao: 'Extratos bancários' },
@@ -234,6 +240,7 @@ const CHECKLISTS: Record<TipoCaso, DocumentoChecklist[]> = {
   ],
   SAUDE: [
     { codigo: 'CARTEIRINHA', descricao: 'Carteirinha do plano' },
+    { codigo: 'BOLETOS', descricao: 'Histórico de boletos do plano de saúde OBS : Alguns planos fornecem um extrato ja com essas informações por ano, basta ligar e solicitar que eles enviam por e-mail.' },
     { codigo: 'LAUDO', descricao: 'Laudo médico', sensivel: true },
     { codigo: 'NEGATIVA', descricao: 'Negativa do plano' },
   ],
@@ -273,6 +280,17 @@ export class ChatbotService {
     const texto = message.trim();
     const agora = new Date();
 
+    if (conversation.workflowStep === 'FINALIZADO') {
+      return this.handleRetornoCliente(texto, conversation);
+    }
+
+
+
+    if (this.detectPedidoAjuda(texto)) {
+      await this.notificarAdvogado('AJUDA', conversation);
+      return 'Entendi que você precisa de ajuda. Já notifiquei um de nossos advogados, que irá te contatar o mais breve possível para te auxiliar, ok? Enquanto isso, se quiser, pode continuar me enviando informações ou documentos sobre o seu caso.';
+    }
+
     if (texto.toLowerCase() === '/deletar') {
       // 1. Deletamos os documentos vinculados a esta conversa
       await prisma.conversationDocument.deleteMany({
@@ -286,53 +304,79 @@ export class ChatbotService {
 
       return "♻️ *Histórico resetado!* Seus dados e documentos foram apagados. Você já pode enviar um 'Oi' para iniciar um novo teste.";
     }
-if (texto.toLowerCase() === '/dados') {
-    // ====================================================================
-    // NOVO: BLOCO DO ADVOGADO (ADMIN ROUTER)
-    // Verifica se o número do remetente pertence a um Advogado cadastrado
-    // ====================================================================
+    if (texto.toLowerCase() === '/dados') {
+      // ====================================================================
+      // NOVO: BLOCO DO ADVOGADO (ADMIN ROUTER)
+      // Verifica se o número do remetente pertence a um Advogado cadastrado
+      // ====================================================================
 
-    // Limpa o número para comparar apenas os dígitos (ex: 5511999999999)
-    // 1. Limpa tudo que não for número (ex: remove @c.us se tiver)
-    let numeroLimpo = customerPhone.replace(/\D/g, '');
+      // Limpa o número para comparar apenas os dígitos (ex: 5511999999999)
+      // 1. Limpa tudo que não for número (ex: remove @c.us se tiver)
+      let numeroLimpo = customerPhone.replace(/\D/g, '');
 
-    // 2. Se vier com o código do Brasil (55) e tiver tamanho suficiente, remove o 55
-    if (numeroLimpo.length >= 12 && numeroLimpo.startsWith('55')) {
-      numeroLimpo = numeroLimpo.substring(2);
-    }
-
-    // Agora temos algo como "7181482521" (10 dígitos) ou "71981482521" (11 dígitos)
-    // 3. Fatiamos as partes que NUNCA mudam
-    const ddd = numeroLimpo.substring(0, 2);            
-    const final4 = numeroLimpo.slice(-4);                
-    const meio4 = numeroLimpo.slice(-8, -4);             
-
-    // 4. Busca flexível: Tem que ter o DDD e as duas metades, ignorando formatação do banco
-    const advogado = await prisma.user.findFirst({
-      where: {
-        AND: [
-          { telefone: { contains: ddd } },
-          { telefone: { contains: meio4 } },
-          { telefone: { contains: final4 } }
-        ],
-        ativo: true // Segurança extra
+      // 2. Se vier com o código do Brasil (55) e tiver tamanho suficiente, remove o 55
+      if (numeroLimpo.length >= 12 && numeroLimpo.startsWith('55')) {
+        numeroLimpo = numeroLimpo.substring(2);
       }
-    });
 
-    // Se for o advogado, intercepta a mensagem e envia pro Assistente Pessoal dele
-    if (advogado) {
-      const assistente = new AdvogadoAssistantService();
-      const resposta = await assistente.processarComando(texto, advogado.id);
-      return resposta;
+      // Agora temos algo como "7181482521" (10 dígitos) ou "71981482521" (11 dígitos)
+      // 3. Fatiamos as partes que NUNCA mudam
+      const ddd = numeroLimpo.substring(0, 2);
+      const final4 = numeroLimpo.slice(-4);
+      const meio4 = numeroLimpo.slice(-8, -4);
+
+      // 4. Busca flexível: Tem que ter o DDD e as duas metades, ignorando formatação do banco
+      const advogado = await prisma.user.findFirst({
+        where: {
+          AND: [
+            { telefone: { contains: ddd } },
+            { telefone: { contains: meio4 } },
+            { telefone: { contains: final4 } }
+          ],
+          ativo: true // Segurança extra
+        }
+      });
+
+      // Se for o advogado, intercepta a mensagem e envia pro Assistente Pessoal dele
+      if (advogado) {
+        const assistente = new AdvogadoAssistantService();
+        const resposta = await assistente.processarComando(texto, advogado.id);
+        return resposta;
+      }
     }
-  }
 
     let estadoAtual = conversation.workflowStep as WorkflowStep;
+
+    // =============================
+    // CLIENTE AVISOU QUE ASSINOU
+    // =============================
+    if (
+      estadoAtual === 'ASSINATURA' &&
+      this.detectAssinaturaConcluida(texto)
+    ) {
+      await this.notificarAdvogado('ASSINOU', conversation);
+
+      await prisma.conversation.update({
+        where: { customerPhone },
+        data: {
+          workflowStep: 'FINALIZADO'
+        }
+      });
+
+      return `
+Perfeito! Recebi sua confirmação 🙌
+
+Nossa equipe jurídica já foi notificada e dará continuidade na análise do seu caso.
+
+Em breve você receberá atualizações.
+`.trim();
+    }
+
     let tipoCaso = (conversation.tipoCaso as TipoCaso) ?? 'GERAL';
     const jaApresentado = !!conversation.presentedAt;
 
     const { isGreeting, isPureGreeting } = detectGreeting(texto);
-   
+
 
     const documentosRecebidos = await prisma.conversationDocument.findMany({
       where: {
@@ -384,6 +428,7 @@ if (texto.toLowerCase() === '/dados') {
           where: { customerPhone },
           data: { presentedAt: agora },
         });
+        await this.notificarAdvogado('PRIMEIRO_CONTATO', conversation);
 
         return this.responder({
           intent: 'APRESENTACAO_INICIAL',
@@ -448,22 +493,39 @@ if (texto.toLowerCase() === '/dados') {
       }
 
       return `Documento recebido!   
-Agora preciso de: *${documentosPendentesAtuais.map(d => d.descricao).join(', ')}*.`;
+  Agora preciso de: *${documentosPendentesAtuais.map(d => d.descricao).join(', ')}*.`;
     }
 
     if (estadoAtual === 'COLETA_DOCS_EXTRA') {
 
       // Cliente finalizou manualmente
       if (texto.toUpperCase().includes('FINALIZAR')) {
+
         await prisma.conversation.update({
           where: { customerPhone },
-          data: { workflowStep: 'ASSINATURA' },
+          data: {
+            workflowStep: 'ASSINATURA',
+            fallbackStage: 0
+          },
         });
 
-        return `
-Perfeito! Recebemos todas as provas!  
+        const contrato = "https://app.zapsign.com.br/verificar/doc/65194d71-ad5d-4192-a2b2-5838f664a6dc"
+        const procuracao = "https://app.zapsign.com.br/verificar/doc/52151f47-c845-45a7-beae-6cd1042d5ecb"
 
-Agora um advogado irá analisar seu caso e entrar em contato com você.
+        return `
+Perfeito! Recebemos todas as provas.
+
+Agora só precisamos da sua assinatura digital para iniciar a análise do seu caso.
+
+📄 Contrato:
+${contrato}
+
+🖊️ Procuração:
+${procuracao}
+
+Leva menos de 2 minutos 😉
+
+Assim que finalizar, me avise por aqui.
 `.trim();
       }
 
@@ -682,7 +744,7 @@ Agora um advogado irá analisar seu caso e entrar em contato com você.
     }
 
     return textoResposta;
-  } 
+  }
 
   private buildSystemPrompt(context: {
     estadoAtual: WorkflowStep;
@@ -701,7 +763,7 @@ Agora um advogado irá analisar seu caso e entrar em contato com você.
 
     return `
 # IDENTIDADE
-Você é Carol, advogada especialista em triagem do escritório RCS Advocacia.
+Você é Carol, assistente especialista em triagem do escritório RCS Advocacia.
 Sua missão é acolher o cliente, entender o problema e organizar a documentação para a equipe jurídica.
 
 # TOM DE VOZ E PERSONALIDADE (CRÍTICO)
@@ -740,6 +802,7 @@ Sua missão é acolher o cliente, entender o problema e organizar a documentaç�
 - Se faltar qualquer informação, faça UMA pergunta objetiva e aguarde resposta.
 - Apenas chame "registrarFatos" quando todos os campos estiverem totalmente preenchidos.
 
+
 ### REGRA CRÍTICA – REGISTRO DE FATOS (OBRIGATÓRIO)
 
 Ao chamar a tool "registrarFatos":
@@ -760,7 +823,86 @@ Exemplo RUIM:
 Exemplo CORRETO:
 "O voo sofreu atraso de aproximadamente 12 horas, fazendo com que o cliente permanecesse no aeroporto durante todo o período, perdendo uma reunião profissional importante e enfrentando desgaste físico e emocional."
 
+
+REGRA UNIVERSAL (OBRIGATÓRIA EM TODOS OS CASOS)
+
+Assim que o cliente explicar o problema, antes de qualquer nova pergunta:
+
+Você DEVE sempre:
+
+Demonstrar que compreendeu a situação
+
+Informar que o escritório é especialista nesse tipo de caso
+
+Estrutura obrigatória:
+
+"Entendi, imagino o transtorno que isso causou.
+
+Nós somos especialistas em resolver situações como essa e vamos te ajudar."
+
+Nunca pule essa etapa.
+Nunca vá direto para perguntas.
+
+
 CLASSIFICAÇÃO DO CASO (OBRIGATÓRIO):
+
+### CONDUTAS ESPECÍFICAS POR TIPO DE CASO
+
+#### ✈️ CASO VOO
+Sempre perguntar quantas horas de atraso o cliente enfrentou.
+
+Se o cliente mencionar atraso superior a 4 horas, cancelamento ou overbooking:
+
+Após validar o problema, informe de forma simples:
+
+"Atrasos superiores a 4 horas geralmente já são considerados fora do razoável e podem indicar falha na prestação do serviço."
+
+Em seguida pergunte:
+
+1. A companhia aérea forneceu alimentação ou algum tipo de assistência?
+
+Se NÃO:
+
+Pergunte:
+
+"Você guardou notas fiscais ou recibos do que precisou gastar durante o atraso?"
+
+Solicite também:
+
+- Cartão de embarque
+- Ticket da passagem
+- E-mails ou mensagens informando o atraso
+
+Se houver:
+
+- Bagagem danificada
+- Bagagem extraviada
+
+Pergunte se foi feito o:
+
+RIB (Registro de Irregularidade de Bagagem)
+
+Se NÃO tiver sido feito:
+
+Informe que um advogado poderá orientar a registrar a reclamação no consumidor.gov.br.
+
+#### 🏥 CASO PLANO DE SAÚDE (AUMENTO)
+
+Se o cliente mencionar aumento no plano:
+
+Informe:
+
+"Entendi. Em muitos casos esse tipo de aumento pode ser revisto judicialmente."
+
+Além dos documentos básicos, solicite:
+
+- Histórico de boletos desde a contratação
+
+Explique que:
+
+- O plano pode fornecer extrato anual
+- Pode ser solicitado por telefone
+- Ou pelo aplicativo do próprio plano
 
 Assim que identificar claramente o tipo do caso, você DEVE chamar a tool
 "definirTipoCaso".
@@ -772,6 +914,7 @@ Exemplos:
 
 Se o tipo ainda não estiver claro, NÃO chame a tool.
 Nunca invente.
+
 
 REGRA ABSOLUTA DE TOOLS:
 - O nome da tool é EXATAMENTE: "registrarFatos"
@@ -813,6 +956,30 @@ REGRA ABSOLUTA DE TOOLS:
   - Após confirmar, PEÇA O PRÓXIMO DOCUMENTO: "${proximoDocumento}".
 
 ---
+
+##5. PRÉ-ENCAMINHAMENTO JURÍDICO 
+
+Após o cliente digitar FINALIZAR:
+
+Objetivo: Preparar emocionalmente para assinatura.
+
+Mensagem modelo:
+
+"Perfeito 
+Já organizei todas as informações para análise da equipe jurídica.
+
+O próximo passo é apenas formalizar sua autorização para que possamos iniciar a avaliação do seu caso com segurança.
+
+Vou te enviar um documento digital simples para assinatura.
+Ele serve apenas para:
+
+• Autorizar a análise do seu caso
+• Garantir a proteção dos seus dados
+• Permitir o início da avaliação jurídica
+
+Essa assinatura não representa contratação imediata e não gera compromisso neste momento.
+
+Assim que assinado, nossa equipe já inicia a avaliação."
 
 # LIMITES ÉTICOS E TÉCNICOS (INVIOLÁVEIS)
 1. **Promessas:** NUNCA garanta ganho de causa ou valores de indenização ("Você vai ganhar X reais"). Diga "Vamos analisar a viabilidade".
@@ -881,8 +1048,182 @@ Agora, responda à última mensagem do cliente seguindo estas diretrizes.
   }
 
 
+  private detectAssinaturaConcluida(texto: string) {
+    const t = texto.toLowerCase();
 
- 
+    return [
+      'assinei',
+      'já assinei',
+      'assinado',
+      'finalizei',
+      'terminei',
+      'pronto',
+      'ok assinado'
+    ].some(p => t.includes(p));
+  }
+
+  private detectPedidoAjuda(texto: string) {
+    const t = texto.toLowerCase();
+
+    return [
+      'ajuda',
+      'não consegui',
+      'nao consegui',
+      'dúvida',
+      'duvida',
+      'falar com advogado',
+      'entrar em contato',
+      'problema',
+      'não estou conseguindo',
+      'nao estou conseguindo'
+    ].some(p => t.includes(p));
+  }
 
 
+
+
+
+  async notificarAdvogado(tipo: 'ASSINOU' | 'AJUDA' | 'PRIMEIRO_CONTATO', conversation: any) {
+    const advogadoAdm = await prisma.user.findFirst({
+      where: {
+        tipo: 'advogado_admin',
+        ativo: true
+      }
+    });
+
+    if (!advogadoAdm) return;
+
+    const mail = new MailService();
+
+    let subject = '';
+    let html = '';
+
+    if (tipo === 'ASSINOU') {
+      subject = 'Cliente assinou os documentos';
+
+      html = `
+      Cliente informou que concluiu a assinatura.
+
+      Telefone: ${conversation.customerPhone}
+      Nome: ${conversation.customerName || 'Não informado'}
+    `;
+    }
+
+    if (tipo === 'AJUDA') {
+      subject = 'Cliente precisa de ajuda';
+
+      html = `
+      Cliente solicitou ajuda na assinatura ou envio de documentos.
+
+      Telefone: ${conversation.customerPhone}
+      Nome: ${conversation.customerName || 'Não informado'}
+    `;
+    }
+
+
+    if (tipo === 'PRIMEIRO_CONTATO') {
+      subject = 'Cliente entrou em contato';
+
+      html = `
+      Cliente entrou em contato.
+
+      Telefone: ${conversation.customerPhone}
+      Nome: ${conversation.customerName || 'Não informado'}
+    `;
+    }
+
+    await mail.sendEmail(
+      advogadoAdm.email,
+      subject,
+      html
+    );
+  }
+
+
+  private detectNovoAtendimento(texto: string): boolean {
+    const t = texto.toLowerCase();
+
+    return [
+      'novo atendimento',
+      'preciso de ajuda',
+      'quero ajuda',
+      'quero falar',
+      'tenho um problema',
+      'entrar com ação',
+      'abrir atendimento'
+    ].some(p => t.includes(p));
+  }
+
+  private detectConsultaProcesso(texto: string): boolean {
+    const t = texto.toLowerCase();
+
+    return [
+      'meu processo',
+      'andamento',
+      'como está',
+      'atualização',
+      'consultar processo',
+      'ver processo',
+      'quero saber do caso',
+      'notícia do processo',
+      'tem novidade',
+      'como anda'
+    ].some(p => t.includes(p));
+  }
+
+
+  private async handleRetornoCliente(texto: string, conversation: any) {
+
+    const nome = conversation.customerName ?? '';
+
+    // 👉 Detecta intenção real
+    const querNovoAtendimento = this.detectNovoAtendimento(texto);
+    const querAndamento = this.detectConsultaProcesso(texto);
+
+    // 🟡 Ainda não falou o que quer
+    if (!querNovoAtendimento && !querAndamento) {
+      return `
+${getSaudacaoAtual()}, ${nome}!
+
+Seu atendimento anterior já foi finalizado.
+
+Como posso te ajudar agora?
+
+Você quer acompanhar seus processos ou iniciar um novo atendimento?
+    `.trim();
+    }
+
+    // 🔎 Quer consultar processo
+    if (querAndamento) {
+      return `
+Claro!
+
+Para localizar seu processo, me informe seu CPF.
+    `.trim();
+    }
+
+    // 🆕 Quer novo atendimento
+    if (querNovoAtendimento) {
+
+      await prisma.conversation.update({
+        where: { customerPhone: conversation.customerPhone },
+        data: {
+          workflowStep: 'COLETA_FATOS',
+          finalizedAt: null,
+          tempData: {},
+          tipoCaso: null
+        }
+      });
+
+      return `
+Perfeito!
+
+Vamos iniciar um novo atendimento.
+
+Pode me contar o que aconteceu?
+    `.trim();
+    }
+
+    return null;
+  }
 }

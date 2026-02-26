@@ -48,6 +48,7 @@ export function detectGreeting(texto: string): {
     'reclamação',
     'contrato',
   ];
+  
 
   const startsWithGreeting = saudacoes.some((s) =>
     normalizado.startsWith(s),
