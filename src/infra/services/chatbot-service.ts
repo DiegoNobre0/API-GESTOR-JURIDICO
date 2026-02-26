@@ -1238,15 +1238,22 @@ Pode me contar o que aconteceu?`;
   // ====================================
   if (conversation.returnFlow === 'AGUARDANDO_CPF') {
 
-    const cpf = texto.replace(/\D/g, '');
+    const cpfLimpo = texto.replace(/\D/g, '');
 
-    if (cpf.length !== 11) {
+    if (cpfLimpo.length !== 11) {
       return 'Pode me informar um CPF válido?';
     }
 
+    // 2. Transforma "05682018508" de volta em "056.820.185-08"
+    const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+
+    // 3. Busca no banco aceitando os dois formatos
     const processos = await prisma.processo.findMany({
       where: {
-        clienteCpf: cpf,
+        OR: [
+          { clienteCpf: cpfFormatado }, // Tenta achar com pontuação (Padrão atual do seu banco)
+          { clienteCpf: cpfLimpo }      // Tenta achar sem pontuação (Caso tenha algum salvo assim)
+        ],
         userId: conversation.userId,
         arquivado: false
       },
@@ -1314,12 +1321,17 @@ Pode me contar o que aconteceu?`;
       },
       include: {
         andamentos: {
-          orderBy: { createdAt: 'desc' },
+          orderBy: { dataMovimento: 'desc' }, // 👈 MUDANÇA AQUI: Ordenar pela data real do tribunal
           take: 5
         }
       }
     });
 
+    if (!processo) {
+      return 'Ops, não encontrei os detalhes desse processo. Tente consultar novamente.';
+    }
+
+    // Limpa o estado da conversa para o bot voltar ao normal na próxima mensagem
     await prisma.conversation.update({
       where: { customerPhone: conversation.customerPhone },
       data: {
@@ -1328,7 +1340,8 @@ Pode me contar o que aconteceu?`;
       }
     });
 
-    return this.formatarAndamentos([processo]);
+    // Passamos apenas O processo escolhido para formatar
+    return this.formatarAndamentosProcesso(processo);
   }
 
   return null;
@@ -1370,6 +1383,42 @@ private formatarAndamentos(processos: any[]) {
   });
 
   return resposta.trim();
+}
+
+private formatarAndamentosProcesso(processo: any) {
+  const numProcesso = processo.numeroProcesso ?? processo.numeroInterno;
+  
+  let msg = `📄 *Processo:* ${numProcesso}\n\n`;
+
+  // Se não tiver nenhum andamento cadastrado
+  if (!processo.andamentos || processo.andamentos.length === 0) {
+    msg += `Ainda não temos movimentações registradas para este processo.\n`;
+    msg += `Fique tranquilo, assim que houver novidades, nós avisaremos!`;
+    return msg;
+  }
+
+  msg += `*Últimas movimentações:*\n\n`;
+
+  // Percorre os até 5 andamentos que vieram do banco
+  processo.andamentos.forEach((and: any) => {
+    // Usa dataMovimento do CNJ (se for nulo, usa a data de criação no banco)
+    const dataRaw = and.dataMovimento || and.createdAt;
+    
+    // Formata para DD/MM/YYYY
+    const dataFormatada = new Intl.DateTimeFormat('pt-BR').format(new Date(dataRaw));
+
+    msg += `📅 *${dataFormatada}*\n`;
+    msg += `🔹 *${and.titulo}*\n`;
+    
+    // Adiciona a descrição (resumo da IA ou original) se ela for diferente do título
+    if (and.descricao && and.descricao !== and.titulo) {
+      msg += `_${and.descricao}_\n`;
+    }
+    
+    msg += `\n`; // Espaço entre um andamento e outro
+  });
+
+  return msg;
 }
 
 
