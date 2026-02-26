@@ -300,13 +300,14 @@ export class ChatbotService {
       return "♻️ *Histórico resetado!* Seus dados e documentos foram apagados. Você já pode enviar um 'Oi' para iniciar um novo teste.";
     }
     if (texto.toLowerCase().startsWith('/dados')) {
-     
+      
       let numeroLimpo = customerPhone.replace(/\D/g, '');
 
       if (numeroLimpo.length >= 12 && numeroLimpo.startsWith('55')) {
         numeroLimpo = numeroLimpo.substring(2);
       }
 
+      // Aqui limpamos o comando! Ex: "/dados paguei 50" vira "paguei 50"
       const comandoLimpo = texto.replace(/^\/dados[:\s]*/i, '').trim();
 
       const ddd = numeroLimpo.substring(0, 2);
@@ -320,7 +321,7 @@ export class ChatbotService {
             { telefone: { contains: meio4 } },
             { telefone: { contains: final4 } }
           ],
-          ativo: true // Segurança extra
+          ativo: true 
         }
       });
       
@@ -330,7 +331,8 @@ export class ChatbotService {
         }
 
         const assistente = new AdvogadoAssistantService();
-        const resposta = await assistente.processarComando(texto, advogado.id);
+        // 👇 AQUI ESTÁ A CORREÇÃO: Enviando o comandoLimpo para a IA!
+        const resposta = await assistente.processarComando(comandoLimpo, advogado.id);
         return resposta;
       }
     }
