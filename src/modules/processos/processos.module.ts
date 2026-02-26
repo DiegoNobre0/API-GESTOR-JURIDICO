@@ -39,6 +39,32 @@ export async function processosModule(app: FastifyInstance) {
       }
     });
 
+    group.post("/consulta-oab", async (req, rep) => {
+      const bodySchema = z.object({
+        oab: z.string(),
+        uf: z.string()
+      });
+
+      const { oab, uf } = bodySchema.parse(req.body);
+      
+      // Chama a função focada em ANDAMENTOS
+      const andamentos = await service.buscarAndamentosPorOab(oab, uf);
+      
+      return rep.send(andamentos);
+    });
+
+    group.get("/cpf/:cpf/andamentos", async (req, rep) => {
+      const { cpf } = req.params as { cpf: string };
+
+      const data = await service.buscarAndamentosPorCpf(cpf, req.user.sub);
+
+      if (!data) {
+        return rep.status(404).send({ message: "Nenhum processo encontrado para este CPF." });
+      }
+
+      return rep.send(data);
+    });
+
     // GET /processos/:id/andamentos
     group.get("/:id/andamentos", async (req, rep) => {
       const { id } = req.params as { id: string };

@@ -1080,9 +1080,6 @@ Agora, responda à última mensagem do cliente seguindo estas diretrizes.
   }
 
 
-
-
-
   async notificarAdvogado(tipo: 'ASSINOU' | 'AJUDA' | 'PRIMEIRO_CONTATO', conversation: any) {
     const advogadoAdm = await prisma.user.findFirst({
       where: {
@@ -1172,58 +1169,210 @@ Agora, responda à última mensagem do cliente seguindo estas diretrizes.
   }
 
 
-  private async handleRetornoCliente(texto: string, conversation: any) {
+private async handleRetornoCliente(texto: string, conversation: any) {
 
-    const nome = conversation.customerName ?? '';
+  const nome = conversation.customerName ?? 'tudo bem';
 
-    // 👉 Detecta intenção real
-    const querNovoAtendimento = this.detectNovoAtendimento(texto);
-    const querAndamento = this.detectConsultaProcesso(texto);
+  // ====================================
+  // ETAPA 1 - PRIMEIRA MENSAGEM
+  // ====================================
+  if (!conversation.returnFlow) {
 
-    // 🟡 Ainda não falou o que quer
-    if (!querNovoAtendimento && !querAndamento) {
-      return `
-${getSaudacaoAtual()}, ${nome}!
+    await prisma.conversation.update({
+      where: { customerPhone: conversation.customerPhone },
+      data: { returnFlow: 'AGUARDANDO_ESCOLHA' }
+    });
+
+    return `${getSaudacaoAtual()}, ${nome} 😊
 
 Seu atendimento anterior já foi finalizado.
 
 Como posso te ajudar agora?
 
-Você quer acompanhar seus processos ou iniciar um novo atendimento?
-    `.trim();
+Você quer acompanhar um processo ou iniciar um novo atendimento?`;
+  }
+
+  // ====================================
+  // ETAPA 2 - INTENÇÃO
+  // ====================================
+  if (conversation.returnFlow === 'AGUARDANDO_ESCOLHA') {
+
+    const t = texto.toLowerCase();
+
+    if (t.includes('processo')) {
+      await prisma.conversation.update({
+        where: { customerPhone: conversation.customerPhone },
+        data: { returnFlow: 'AGUARDANDO_CPF' }
+      });
+
+      return `Perfeito 👍  
+Para localizar seus processos, me informe seu CPF.`;
     }
 
-    // 🔎 Quer consultar processo
-    if (querAndamento) {
-      return `
-Claro!
-
-Para localizar seu processo, me informe seu CPF.
-    `.trim();
-    }
-
-    // 🆕 Quer novo atendimento
-    if (querNovoAtendimento) {
+    if (
+      t.includes('novo') ||
+      t.includes('atendimento') ||
+      t.includes('abrir')
+    ) {
 
       await prisma.conversation.update({
         where: { customerPhone: conversation.customerPhone },
         data: {
           workflowStep: 'COLETA_FATOS',
-          finalizedAt: null,
-          tempData: {},
-          tipoCaso: null
+          returnFlow: null,
+          returnData: {}
         }
       });
 
-      return `
-Perfeito!
-
+      return `Claro 😊  
 Vamos iniciar um novo atendimento.
 
-Pode me contar o que aconteceu?
-    `.trim();
+Pode me contar o que aconteceu?`;
     }
 
-    return null;
+    return `Você gostaria de acompanhar um processo ou iniciar um novo atendimento?`;
   }
+
+  // ====================================
+  // ETAPA 3 - RECEBER CPF
+  // ====================================
+  if (conversation.returnFlow === 'AGUARDANDO_CPF') {
+
+    const cpf = texto.replace(/\D/g, '');
+
+    if (cpf.length !== 11) {
+      return 'Pode me informar um CPF válido?';
+    }
+
+    const processos = await prisma.processo.findMany({
+      where: {
+        clienteCpf: cpf,
+        userId: conversation.userId,
+        arquivado: false
+      },
+      include: {
+        andamentos: {
+          orderBy: { createdAt: 'desc' },
+          take: 3
+        }
+      }
+    });
+
+    if (!processos.length) {
+      return 'Não encontrei processos vinculados a esse CPF.';
+    }
+
+    // 👉 1 processo → responde direto
+    if (processos.length === 1) {
+
+      await prisma.conversation.update({
+        where: { customerPhone: conversation.customerPhone },
+        data: {
+          returnFlow: null,
+          returnData: {}
+        }
+      });
+
+      return this.formatarAndamentos(processos);
+    }
+
+    // 👉 vários processos → pedir escolha
+    await prisma.conversation.update({
+      where: { customerPhone: conversation.customerPhone },
+      data: {
+        returnFlow: 'ESCOLHENDO_PROCESSO',
+        returnData: {
+          processos: processos.map(p => ({
+            id: p.id,
+            numero: p.numeroProcesso ?? p.numeroInterno
+          }))
+        }
+      }
+    });
+
+    return this.montarListaProcessos(processos);
+  }
+
+  // ====================================
+  // ETAPA 4 - ESCOLHA DO PROCESSO
+  // ====================================
+  if (conversation.returnFlow === 'ESCOLHENDO_PROCESSO') {
+
+    const escolha = parseInt(texto.replace(/\D/g, ''));
+    const lista = conversation.returnData?.processos;
+
+    if (!lista || !escolha || escolha < 1 || escolha > lista.length) {
+      return 'Pode me dizer qual processo deseja ver? (ex: 1)';
+    }
+
+    const escolhido = lista[escolha - 1];
+
+    const processo = await prisma.processo.findFirst({
+      where: {
+        id: escolhido.id,
+        userId: conversation.userId
+      },
+      include: {
+        andamentos: {
+          orderBy: { createdAt: 'desc' },
+          take: 5
+        }
+      }
+    });
+
+    await prisma.conversation.update({
+      where: { customerPhone: conversation.customerPhone },
+      data: {
+        returnFlow: null,
+        returnData: {}
+      }
+    });
+
+    return this.formatarAndamentos([processo]);
+  }
+
+  return null;
+}
+
+
+private montarListaProcessos(processos: any[]) {
+
+  let msg = `Encontrei mais de um processo seu 😊\n\n`;
+  msg += `Qual deles você deseja acompanhar?\n\n`;
+
+  processos.forEach((p, i) => {
+    msg += `${i + 1}️⃣ Processo ${p.numeroProcesso ?? p.numeroInterno}\n`;
+  });
+
+  msg += `\nPode me dizer o número.`;
+
+  return msg;
+}
+
+
+private formatarAndamentos(processos: any[]) {
+
+  let resposta = `Encontrei atualizações do seu processo 👇\n\n`;
+
+  processos.forEach(p => {
+
+    resposta += `📁 ${p.descricaoObjeto}\n`;
+
+    if (!p.andamentos.length) {
+      resposta += `Sem movimentações recentes.\n\n`;
+      return;
+    }
+
+    p.andamentos.forEach((a: any) => {
+      resposta += `• ${a.titulo}\n`;
+      resposta += `${a.descricao}\n\n`;
+    });
+  });
+
+  return resposta.trim();
+}
+
+
+
+  
 }

@@ -57,26 +57,26 @@ export async function usersModule(app: FastifyInstance) {
 
     // GET /users/team -> Lista advogados e admins (Aba 2)
     group.get("/team", async (req, rep) => {
-      if (req.user.tipo !== 'advogado_admin') {
-        return rep.status(403).send({ message: "Acesso negado." });
-      }
+      // if (req.user.tipo !== 'advogado_admin') {
+      //   return rep.status(403).send({ message: "Acesso negado." });
+      // }
       return service.listTeam();
     });
 
     // PUT /users/team/:id -> Edita um membro da equipe
     group.put<{ Params: { id: string } }>("/team/:id", async (req, rep) => {
-      if (req.user.tipo !== 'advogado_admin') {
-        return rep.status(403).send({ message: "Acesso negado." });
-      }
+      // if (req.user.tipo !== 'advogado_admin') {
+      //   return rep.status(403).send({ message: "Acesso negado." });
+      // }
       const data = req.body; 
       return service.updateTeamMember(req.params.id, data);
     });
 
     // DELETE /users/team/:id -> Exclui um membro da equipe
     group.delete<{ Params: { id: string } }>("/team/:id", async (req, rep) => {
-      if (req.user.tipo !== 'advogado_admin') {
-        return rep.status(403).send({ message: "Acesso negado." });
-      }
+      // if (req.user.tipo !== 'advogado_admin') {
+      //   return rep.status(403).send({ message: "Acesso negado." });
+      // }
       return service.deleteTeamMember(req.params.id);
     });
 
@@ -87,9 +87,9 @@ export async function usersModule(app: FastifyInstance) {
 
     // GET /users -> Lista todos os usuários (Advogados e Clientes)
     group.get("/", async (req, rep) => {
-      if (req.user.tipo !== 'advogado_admin') {
-        return rep.status(403).send({ message: "Acesso negado." });
-      }
+      // if (req.user.tipo !== 'advogado_admin') {
+      //   return rep.status(403).send({ message: "Acesso negado." });
+      // }
       return service.listAll();
     });
 

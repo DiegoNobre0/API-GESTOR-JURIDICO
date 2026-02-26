@@ -250,12 +250,14 @@ model Conversation {
   status      String @default("OPEN") // OPEN, CLOSED, PENDING
   channel     String @default("whatsapp")
   unreadCount Int    @default(0)
-
+  returnFlow String?
+  returnData  Json?
   // Snapshot da última mensagem para a Sidebar carregar rápido
   lastMessageBody String?
   lastMessageTime DateTime  @default(now())
   finalizedAt DateTime?
   lastFallbackAt  DateTime?
+  
   // Tags (Array de strings no Mongo)
   tags            String[]  @default([])
 
@@ -277,6 +279,11 @@ model Conversation {
   presentedAt           DateTime?
 
   @@map("conversations")
+}
+
+enum ReturnFlow {
+  AGUARDANDO_ESCOLHA
+  AGUARDANDO_CPF
 }
 
 enum EtapaDocumento {

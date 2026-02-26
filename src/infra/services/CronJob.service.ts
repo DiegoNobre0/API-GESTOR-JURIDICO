@@ -43,7 +43,15 @@ cron.schedule('0 4 * * *', async () => {
         try {
           if (!processo.numeroProcesso) continue;
 
+          const apenasNumeros = processo.numeroProcesso.replace(/\D/g, '');
+
+          if (apenasNumeros.length !== 20) {
+            console.log(`⏭️ Ignorando busca: ${processo.numeroProcesso} (Não é formato CNJ)`);
+            continue; // Pula para o próximo item da lista
+          }
+
           console.log(`🔎 Processo: ${processo.numeroProcesso}`);
+
 
           const dados = await datajud.consultarMovimentacoes(
             processo.numeroProcesso

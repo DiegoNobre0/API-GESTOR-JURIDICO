@@ -124,9 +124,17 @@ export class ProcessosService {
   // -----------------------------------------------------------------------
   // OUTROS MÉTODOS (Mantidos intactos)
   // -----------------------------------------------------------------------
-  async list(userId: string, arquivado = false) {
+  async list(userId?: string | null, arquivado = false) {
+
+    const filtro: any = { arquivado };
+
+    // Se o controller enviou um userId, adicionamos ao filtro
+    if (userId) {
+      filtro.userId = userId;
+    }
+
     return await prisma.processo.findMany({
-      where: { userId, arquivado },
+      where: { arquivado },
       orderBy: { createdAt: 'desc' },
       include: 
       { cliente: true ,
@@ -252,6 +260,52 @@ export class ProcessosService {
     });
   }
 
+  async buscarAndamentosPorOab(numeroOab: string, estadoOab: string) {
+    // 1. Busca DIRETAMENTE na tabela Andamento
+    const andamentos = await prisma.andamento.findMany({
+      where: {
+        // Faz o caminho: Andamento -> Processo -> User(Advogado)
+        processo: {
+          user: {
+            numeroOab: numeroOab,
+            estadoOab: estadoOab
+          }
+        }
+      },
+      orderBy: { dataMovimento: 'desc' }, // Traz os mais recentes primeiro
+      include: {
+        processo: {
+          select: {
+            numeroProcesso: true,
+            numeroCNJ: true,
+            clienteNome: true
+          }
+        }
+      }
+    });
+
+    // 2. Formata o retorno para a sua tabela do Angular ler perfeitamente
+    // sem você precisar mudar 1 linha de HTML no Front-end!
+    return andamentos.map(andamento => ({
+      // Dados do Processo pai
+      numeroProcesso: andamento.processo.numeroProcesso || andamento.processo.numeroCNJ,
+      clienteNome: andamento.processo.clienteNome,
+      
+      // Dados estruturados do Andamento para a sua tabela
+      tribunal: andamento.tribunal || 'Não informado',
+      orgaoJulgador: andamento.orgaoJulgador || 'Vara não informada',
+      ultimoAndamento: {
+        nome: andamento.titulo,
+        dataHora: andamento.dataMovimento || andamento.createdAt
+      },
+      
+      // Enviando o resto dos dados originais por segurança
+      idAndamento: andamento.id,
+      processoId: andamento.processoId,
+      descricao: andamento.descricao
+    }));
+  }
+
   async createAndamento(processoId: string, userId: string, data: { tipo: string, descricao: string }) {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new Error("Usuário não encontrado");
@@ -293,4 +347,29 @@ export class ProcessosService {
       where: { id }
     });
   }
+  
+  async buscarAndamentosPorCpf(cpf: string, userId: string) {
+
+  // 1️⃣ Busca processos do cliente
+  const processos = await prisma.processo.findMany({
+    where: {
+      clienteCpf: cpf,
+      userId,
+      arquivado: false
+    },
+    include: {
+      andamentos: {
+        orderBy: { createdAt: 'desc' },
+        take: 5 // últimos 5 andamentos
+      }
+    }
+  });
+
+  if (!processos.length) {
+    return null;
+  }
+
+  return processos;
+}
+
 }
