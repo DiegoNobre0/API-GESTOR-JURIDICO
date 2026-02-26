@@ -304,28 +304,20 @@ export class ChatbotService {
 
       return "♻️ *Histórico resetado!* Seus dados e documentos foram apagados. Você já pode enviar um 'Oi' para iniciar um novo teste.";
     }
-    if (texto.toLowerCase() === '/dados') {
-      // ====================================================================
-      // NOVO: BLOCO DO ADVOGADO (ADMIN ROUTER)
-      // Verifica se o número do remetente pertence a um Advogado cadastrado
-      // ====================================================================
-
-      // Limpa o número para comparar apenas os dígitos (ex: 5511999999999)
-      // 1. Limpa tudo que não for número (ex: remove @c.us se tiver)
+    if (texto.toLowerCase().startsWith('/dados')) {
+     
       let numeroLimpo = customerPhone.replace(/\D/g, '');
 
-      // 2. Se vier com o código do Brasil (55) e tiver tamanho suficiente, remove o 55
       if (numeroLimpo.length >= 12 && numeroLimpo.startsWith('55')) {
         numeroLimpo = numeroLimpo.substring(2);
       }
 
-      // Agora temos algo como "7181482521" (10 dígitos) ou "71981482521" (11 dígitos)
-      // 3. Fatiamos as partes que NUNCA mudam
+      const comandoLimpo = texto.replace(/^\/dados[:\s]*/i, '').trim();
+
       const ddd = numeroLimpo.substring(0, 2);
       const final4 = numeroLimpo.slice(-4);
       const meio4 = numeroLimpo.slice(-8, -4);
-
-      // 4. Busca flexível: Tem que ter o DDD e as duas metades, ignorando formatação do banco
+    
       const advogado = await prisma.user.findFirst({
         where: {
           AND: [
@@ -336,9 +328,12 @@ export class ChatbotService {
           ativo: true // Segurança extra
         }
       });
-
-      // Se for o advogado, intercepta a mensagem e envia pro Assistente Pessoal dele
+      
       if (advogado) {
+        if (!comandoLimpo) {
+           return `Olá ${advogado.nome}! Para lançar despesas, digite o comando e o valor. Exemplo:\n\n*/dados: paguei 150 reais de luz*`;
+        }
+
         const assistente = new AdvogadoAssistantService();
         const resposta = await assistente.processarComando(texto, advogado.id);
         return resposta;
