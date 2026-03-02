@@ -1,22 +1,21 @@
 import type { FastifyInstance } from "fastify";
-import { DashboardController } from "./dashboard.controller.js";
+
 import { DashboardService } from "./dashboard.service.js";
+import { DashboardController } from "./dashboard.controller.js";
 
 export async function dashboardModule(app: FastifyInstance) {
   const service = new DashboardService();
   const controller = new DashboardController(service);
 
-  // No Fastify, usamos o register para criar um novo escopo com prefixo
   app.register(async (group) => {
     
-    // O hook de autenticação fica "preso" apenas dentro deste registro
     group.addHook("preHandler", app.authenticate);
 
-    // As rotas aqui dentro herdam o prefixo '/dashboard'
+    // Rota GET única: Retorna KPIs e Dados de todos os Gráficos
     group.get("/stats", (req, res) => controller.getStats(req, res));
-    group.get("/grafico-financeiro", (req, res) => controller.getFinanceiro(req, res));
-    group.get("/grafico-processos", (req, res) => controller.getProcessos(req, res));
-    group.get("/produtividade", (req, res) => controller.getProdutividade(req, res));
+    
+    // Rota PUT: Salva a edição da meta anual
+    group.put("/meta", (req, res) => controller.updateMeta(req, res));
 
-  }, { prefix: '/dashboard' }); // O prefixo é passado como opção no final
+  }, { prefix: '/dashboard' });
 }

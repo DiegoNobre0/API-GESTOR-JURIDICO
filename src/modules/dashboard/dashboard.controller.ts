@@ -4,27 +4,27 @@ import { DashboardService } from "./dashboard.service.js";
 export class DashboardController {
   constructor(private dashboardService: DashboardService) {}
 
+  // Busca TUDO
   async getStats(request: FastifyRequest, reply: FastifyReply) {
     const userId = request.user.sub;
-    const stats = await this.dashboardService.getStats(userId);
+    
+    // Captura as datas enviadas pelo Angular
+    const query = request.query as { dataInicial?: string, dataFinal?: string };
+    
+    const stats = await this.dashboardService.getStats(userId, query.dataInicial, query.dataFinal);
     return reply.send(stats);
   }
 
-  async getFinanceiro(request: FastifyRequest, reply: FastifyReply) {
+  // Salva a Meta Anual
+  async updateMeta(request: FastifyRequest, reply: FastifyReply) {
     const userId = request.user.sub;
-    const data = await this.dashboardService.getGraficoFinanceiro(userId);
-    return reply.send(data);
-  }
-
-  async getProcessos(request: FastifyRequest, reply: FastifyReply) {
-    const userId = request.user.sub;
-    const data = await this.dashboardService.getGraficoProcessos(userId);
-    return reply.send(data);
-  }
-
-  async getProdutividade(request: FastifyRequest, reply: FastifyReply) {
-    const userId = request.user.sub;
-    const data = await this.dashboardService.getProdutividade(userId);
-    return reply.send(data);
+    const body = request.body as { metaAnual: number };
+    
+    if (body.metaAnual === undefined) {
+        return reply.status(400).send({ error: "Meta não informada." });
+    }
+    
+    const updated = await this.dashboardService.atualizarMeta(userId, body.metaAnual);
+    return reply.send({ success: true, meta: updated.metaFaturamento });
   }
 }

@@ -21,7 +21,7 @@ export class MailService {
     });
   }
 
-  async sendEmail(to: string, subject: string, html: string) {
+  async   sendEmail(to: string, subject: string, html: string) {
     try {
       await this.transporter.sendMail({
         from: `"RCS Gestão Jurídica" <${process.env.SMTP_USER}>`,

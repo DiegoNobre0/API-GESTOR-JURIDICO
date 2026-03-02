@@ -19,7 +19,7 @@ export const createProcessoSchema = z.object({
     z.string().optional().nullable()
   ),
 
-
+  tipoCaso: z.string().optional(),
   // --- DADOS DO PROCESSO ---
   descricaoObjeto: z.string(),
   numeroInterno: z.string().optional(),

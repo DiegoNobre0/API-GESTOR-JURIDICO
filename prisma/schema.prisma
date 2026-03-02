@@ -27,6 +27,7 @@ model User {
   notificarPje       Boolean @default(true)
   horarioNotificacao String  @default("07:00")
   ativo              Boolean @default(true) // Para o toggle de Status na tabela
+  metaFaturamento    Float    @default(80000)
 
   // Relacionamentos Reais (Back-references)
   processos          Processo[]
@@ -82,7 +83,7 @@ model Processo {
   descricaoObjeto    String
   numeroCNJ          String?
   ultimaMovimentacao DateTime?
-
+  tipoCaso           String?
   responsavel          String // Nome do advogado (ou link com User)
   tipoHonorarios       String
   statusGeral          String @default("Triagem Inicial") // Mudado de "Contrato Fechado" para refletir a entrada via bot
@@ -260,6 +261,7 @@ model Conversation {
   
   // Tags (Array de strings no Mongo)
   tags            String[]  @default([])
+  qualificacaoLead  String?
 
   workflowStep          String                 @default("COLETA_FATOS") // TRIAGEM, COLETA_FATOS, COLETA_DOCS, ASSINATURA, FINALIZADO
   tipoCaso              String? // VOO, BANCO, SAUDE, GERAL

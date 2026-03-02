@@ -37,6 +37,13 @@ type WorkflowStep =
   | 'FINALIZADO';
 
 type TipoCaso = 'VOO' | 'BANCO' | 'SAUDE' | 'GERAL' | 'BPC' | 'INSS' | 'GOV';
+type TemperaturaLead = 'QUENTE' | 'MORNO' | 'FRIO';
+
+
+export interface ClassificacaoResult {
+  tipoCaso: TipoCaso;
+  qualificacaoLead: TemperaturaLead;
+}
 
 const tipoCasoEnum = z.enum([
   'VOO',
@@ -139,54 +146,72 @@ function assertConversation(
   }
 }
 
-const mail = new MailService();
-
 async function classificarTipoCasoPorFatos(fatos: {
   dinamica_do_dano?: string;
   empresa?: string;
   data_do_ocorrido?: string;
   prejuizo?: string;
-}): Promise<TipoCaso> {
+}): Promise<ClassificacaoResult> {
   const { text } = await generateText({
     model: groq('llama-3.3-70b-versatile'),
-    temperature: 0.3,
+    temperature: 0.2, // Reduzi um pouco para garantir um JSON mais estrito
     system: `
-Você é um classificador jurídico.
-Com base nos fatos fornecidos, classifique o tipo do caso.
+Você é um classificador jurídico sênior. 
+Analise os fatos fornecidos e retorne um objeto JSON estrito com duas chaves: "tipoCaso" e "qualificacaoLead".
 
-RETORNE APENAS UMA DAS OPÇÕES ABAIXO (sem explicações):
-- VOO
-- BANCO
-- SAUDE
-- BPC
-- INSS
-- GOV
-- GERAL
+REGRAS DE CLASSIFICAÇÃO PARA "tipoCaso" (Escolha APENAS UMA):
+- VOO: Atraso, cancelamento, overbooking, bagagem
+- BANCO: Conta bloqueada, banco, cartão, Pix, fraudes financeiras
+- SAUDE: Plano de saúde, tratamento, negativa, aumento abusivo
+- BPC: Benefício assistencial, deficiência, baixa renda (LOAS)
+- INSS: Aposentadoria, auxílio doença, pensão
+- GOV: GOV.BR, serviços públicos digitais
+- GERAL: Dúvida ou genérico que não se encaixa acima
 
-REGRAS:
-- Atraso, cancelamento, overbooking, bagagem → VOO
-- Conta bloqueada, banco, cartão, Pix → BANCO
-- Plano de saúde, tratamento, negativa → SAUDE
-- Benefício assistencial, deficiência, baixa renda → BPC
-- Aposentadoria, auxílio, INSS → INSS
-- GOV.BR, serviços públicos digitais → GOV
-- Dúvida ou genérico → GERAL
+REGRAS DE CLASSIFICAÇÃO PARA "qualificacaoLead" (Temperatura do cliente):
+- QUENTE: Relato claro, prejuízo financeiro ou moral evidente, empresa bem identificada e data do ocorrido recente. Causa pronta para atuar.
+- MORNO: Tem potencial, mas o relato está confuso, faltam detalhes cruciais ou o prejuízo é muito baixo.
+- FRIO: Relato sem sentido, nenhum dano claro, ou caso muito antigo (risco alto de prescrição).
+
+MUITO IMPORTANTE: Retorne APENAS um JSON válido. Não inclua crases, formatações markdown (\`\`\`json) ou textos explicativos.
+EXEMPLO DE SAÍDA: {"tipoCaso": "VOO", "qualificacaoLead": "QUENTE"}
 `,
     prompt: `
-FATOS:
+FATOS RELATADOS:
 ${JSON.stringify(fatos)}
 `,
   });
 
-  const tipo = text?.trim().toUpperCase();
+  // Valores padrão de segurança (Fallback)
+  let tipo: TipoCaso = 'GERAL';
+  let temperatura: TemperaturaLead = 'MORNO';
 
-  const permitidos: TipoCaso[] = [
-    'VOO', 'BANCO', 'SAUDE', 'BPC', 'INSS', 'GOV', 'GERAL',
-  ];
+  try {
+    // A IA retorna o JSON em formato de texto. Precisamos converter para Objeto.
+    const jsonLimpo = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    const resultado = JSON.parse(jsonLimpo);
 
-  return permitidos.includes(tipo as TipoCaso)
-    ? (tipo as TipoCaso)
-    : 'GERAL';
+    const permitidosCaso: TipoCaso[] = ['VOO', 'BANCO', 'SAUDE', 'BPC', 'INSS', 'GOV', 'GERAL'];
+    const permitidosTemperatura: TemperaturaLead[] = ['QUENTE', 'MORNO', 'FRIO'];
+
+    // Valida se a IA não "inventou" um tipo novo
+    if (permitidosCaso.includes(resultado.tipoCaso?.toUpperCase())) {
+      tipo = resultado.tipoCaso.toUpperCase() as TipoCaso;
+    }
+    
+    if (permitidosTemperatura.includes(resultado.qualificacaoLead?.toUpperCase())) {
+      temperatura = resultado.qualificacaoLead.toUpperCase() as TemperaturaLead;
+    }
+
+  } catch (error) {
+    console.error("❌ Erro ao fazer parse do JSON da IA:", error, "Retorno Original:", text);
+    // Se der erro, ele vai retornar os valores padrão GERAL e MORNO
+  }
+
+  return {
+    tipoCaso: tipo,
+    qualificacaoLead: temperatura
+  };
 }
 
 function gerarMensagemDocsExtras(tipoCaso: TipoCaso) {
@@ -236,28 +261,34 @@ const CHECKLISTS: Record<TipoCaso, DocumentoChecklist[]> = {
   ],
   BANCO: [
     { codigo: 'EXTRATO', descricao: 'Extratos bancários' },
-    { codigo: 'BLOQUEIO', descricao: 'Print do bloqueio' },
+    { codigo: 'BLOQUEIO', descricao: 'Print da mensagem do banco ou do chat avisando do bloqueio. Se ainda não tiver, entre em contato com o banco, tire um print e nos envie.' },
   ],
   SAUDE: [
-    { codigo: 'CARTEIRINHA', descricao: 'Carteirinha do plano' },
-    { codigo: 'BOLETOS', descricao: 'Histórico de boletos do plano de saúde OBS : Alguns planos fornecem um extrato ja com essas informações por ano, basta ligar e solicitar que eles enviam por e-mail.' },
-    { codigo: 'LAUDO', descricao: 'Laudo médico', sensivel: true },
-    { codigo: 'NEGATIVA', descricao: 'Negativa do plano' },
-  ],
-  GERAL: [
     { codigo: 'RG', descricao: 'RG ou CNH' },
     { codigo: 'COMP_RES', descricao: 'Comprovante de residência' },
+    { codigo: 'CARTEIRINHA', descricao: 'Carteirinha do plano de saúde' },
+    { codigo: 'PROVAS_EXTRAS', descricao: 'Outras provas que julgar importante' },
+    { codigo: 'CASO_NEGATIVA', descricao: 'SE FOR NEGATIVA DE COBERTURA: Envie o print/foto da negativa, laudo e solicitações médicas do procedimento negado, e o comprovante de pagamento das 3 últimas mensalidades.', sensivel: true },
+    { codigo: 'CASO_REVISIONAL', descricao: 'SE FOR REVISIONAL (Aumento Abusivo): Envie o histórico de pagamentos de todo o tempo no plano (ex: 2020 a 2026). Caso não tenha, ligue para o plano, solicite e anote o número do protocolo.' },
   ],
   BPC: [
     { codigo: 'RG', descricao: 'RG ou CNH' },
     { codigo: 'CPF', descricao: 'CPF' },
+    { codigo: 'SENHA_GOV', descricao: 'Senha do portal GOV.BR (necessária para fazermos a análise de viabilidade)' },
     { codigo: 'CADUNICO', descricao: 'Folha do CadÚnico' },
     { codigo: 'LAUDO', descricao: 'Laudo médico', sensivel: true },
   ],
-  INSS: [{ codigo: 'RG', descricao: 'RG ou CNH' }],
+  INSS: [
+    { codigo: 'RG', descricao: 'RG ou CNH' },
+    { codigo: 'CPF', descricao: 'CPF' },
+    { codigo: 'SENHA_GOV', descricao: 'Senha do portal GOV.BR (necessária para fazermos a análise de viabilidade)' },
+  ],
   GOV: [
     { codigo: 'RG', descricao: 'RG ou CNH' },
-    { codigo: 'GOVBR', descricao: 'Print da conta GOV.BR' },
+    { codigo: 'GOVBR', descricao: 'Print da conta GOV.BR ou dados de acesso' },
+  ],
+  GERAL: [    
+    { codigo: 'PROVAS', descricao: 'Todos os documentos, prints de conversas, fotos e provas que você tiver relacionadas ao seu caso' },
   ],
 };
 
@@ -281,7 +312,7 @@ export class ChatbotService {
     const agora = new Date();   
 
 
-    if (this.detectPedidoAjuda(texto)) {
+    if (this.detectPedidoAjuda(texto) && conversation.workflowStep !== 'COLETA_FATOS') {
       await this.notificarAdvogado('AJUDA', conversation);
       return 'Entendi que você precisa de ajuda. Já notifiquei um de nossos advogados, que irá te contatar o mais breve possível para te auxiliar, ok? Enquanto isso, se quiser, pode continuar me enviando informações ou documentos sobre o seu caso.';
     }
@@ -353,12 +384,12 @@ export class ChatbotService {
     ) {
       await this.notificarAdvogado('ASSINOU', conversation);
 
-      await prisma.conversation.update({
-        where: { customerPhone },
-        data: {
-          workflowStep: 'FINALIZADO'
-        }
-      });
+      // await prisma.conversation.update({
+      //   where: { customerPhone },
+      //   data: {
+      //     workflowStep: 'FINALIZADO'
+      //   }
+      // });
 
       return `
 Perfeito! Recebi sua confirmação 🙌
@@ -475,14 +506,16 @@ Em breve você receberá atualizações.
 
           await prisma.conversation.update({
             where: { customerPhone },
-            data: { tipoCaso: tipoInferido },
+            data: { 
+              tipoCaso: tipoInferido.tipoCaso,
+              qualificacaoLead: tipoInferido.qualificacaoLead,},
           });
 
           conversation = await prisma.conversation.findUnique({
             where: { customerPhone },
           }) as NonNullable<typeof conversation>;
 
-          tipoCaso = tipoInferido;
+          tipoCaso = tipoInferido.tipoCaso;
         }
 
         return gerarMensagemDocsExtras(tipoCaso);
@@ -646,6 +679,12 @@ Assim que finalizar, me avise por aqui.
         const temEmpresa = !!fatos?.empresa;
         const temData = !!fatos?.data_do_ocorrido;
         const temPrejuizo = !!fatos?.prejuizo;
+
+        // if (temDinamica && temEmpresa && temData && temPrejuizo) {
+        //   classificarTipoCasoPorFatos(fatos)
+        //       }
+
+
         if (
           conversation.workflowStep === 'COLETA_FATOS' &&
           temDinamica &&
@@ -782,7 +821,7 @@ Sua missão é acolher o cliente, entender o problema e organizar a documentaç�
 
 ## 1. APRESENTAÇÃO (Se "Cliente já se apresentou" = NÃO)
 - Objetivo: Criar conexão.
-- Ação: Use a saudação do horário. Diga seu nome e cargo ("sou advogada da RCS").
+- Ação: Use a saudação do horário. Diga seu nome e cargo ("sou assistente da RCS").
 - Pergunta: Pergunte o nome do cliente ou como pode ajudar, de forma aberta.
 - **Erro comum:** Não peça relato detalhado ou documentos logo no "Oi".
 
@@ -1078,92 +1117,127 @@ Agora, responda à última mensagem do cliente seguindo estas diretrizes.
 
 
   async notificarAdvogado(tipo: 'ASSINOU' | 'AJUDA' | 'PRIMEIRO_CONTATO', conversation: any) {
-    const advogadoAdm = await prisma.user.findFirst({
+    const advogados = await prisma.user.findMany({
       where: {
-        tipo: 'advogado_admin',
         ativo: true
       }
     });
 
-    if (!advogadoAdm) return;
+    if (!advogados || advogados.length === 0) return;
 
     const mail = new MailService();
 
+    // Configurações dinâmicas baseadas no tipo de evento
     let subject = '';
-    let html = '';
+    let tituloAlert = '';
+    let mensagem = '';
+    let corDestaque = '#3b82f6'; // Azul Padrão
 
     if (tipo === 'ASSINOU') {
-      subject = 'Cliente assinou os documentos';
-
-      html = `
-      Cliente informou que concluiu a assinatura.
-
-      Telefone: ${conversation.customerPhone}
-      Nome: ${conversation.customerName || 'Não informado'}
-    `;
+      subject = '✅ Contrato Assinado: ' + (conversation.customerName || 'Cliente');
+      tituloAlert = 'Documentos Assinados!';
+      mensagem = 'Ótima notícia! O cliente concluiu a assinatura dos documentos com sucesso.';
+      corDestaque = '#10b981'; // Verde Emerald
+    } 
+    else if (tipo === 'AJUDA') {
+      subject = '🚨 Cliente precisa de suporte: ' + (conversation.customerName || 'Cliente');
+      tituloAlert = 'Solicitação de Ajuda';
+      mensagem = 'O cliente travou na etapa do robô e solicitou intervenção humana para continuar.';
+      corDestaque = '#ef4444'; // Vermelho Danger
+    } 
+    else if (tipo === 'PRIMEIRO_CONTATO') {
+      subject = '👋 Novo Lead no WhatsApp: ' + (conversation.customerName || 'Cliente');
+      tituloAlert = 'Novo Contato Iniciado';
+      mensagem = 'Um novo lead começou a interagir com o assistente virtual do escritório.';
+      corDestaque = '#f59e0b'; // Laranja Alert
     }
 
-    if (tipo === 'AJUDA') {
-      subject = 'Cliente precisa de ajuda';
+    // Variáveis do cliente (Tratamento para não dar undefined)
+    const nomeCliente = conversation.customerName || 'Não identificado';
+    const telefoneCliente = conversation.customerPhone || 'Sem telefone';
+    // Se você tiver a URL do sistema no .env, pode colocar aqui. Ex: process.env.FRONTEND_URL
+    const linkSistema = `https://gestor-juridico-front.vercel.app`; 
 
-      html = `
-      Cliente solicitou ajuda na assinatura ou envio de documentos.
+    // O Template HTML com Design Moderno
+    const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+    </head>
+    <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f1f5f9; margin: 0; padding: 40px 20px;">
+      
+      <table width="100%" border="0" cellspacing="0" cellpadding="0">
+        <tr>
+          <td align="center">
+            
+            <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+              
+              <tr>
+                <td style="background-color: #0f172a; padding: 30px; text-align: center;">
+                  <h1 style="color: #ffffff; margin: 0; font-size: 22px; letter-spacing: 1px;">RCS Advogados</h1>
+                  <p style="color: #94a3b8; margin: 5px 0 0 0; font-size: 14px;">Notificação do Sistema</p>
+                </td>
+              </tr>
 
-      Telefone: ${conversation.customerPhone}
-      Nome: ${conversation.customerName || 'Não informado'}
+              <tr>
+                <td style="padding: 40px 30px;">
+                  
+                  <h2 style="margin: 0 0 15px 0; color: ${corDestaque}; font-size: 20px;">${tituloAlert}</h2>
+                  <p style="color: #475569; font-size: 16px; line-height: 1.6; margin: 0 0 25px 0;">
+                    ${mensagem}
+                  </p>
+
+                  <table width="100%" border="0" cellspacing="0" cellpadding="20" style="background-color: #f8fafc; border-left: 4px solid ${corDestaque}; border-radius: 4px;">
+                    <tr>
+                      <td>
+                        <p style="margin: 0 0 10px 0; font-size: 15px; color: #1e293b;">
+                          <strong style="color: #64748b;">👤 Cliente:</strong> ${nomeCliente}
+                        </p>
+                        <p style="margin: 0; font-size: 15px; color: #1e293b;">
+                          <strong style="color: #64748b;">📱 Telefone:</strong> ${telefoneCliente}
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+
+                  <div style="text-align: center; margin-top: 35px;">
+                    <a href="${linkSistema}" style="background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">
+                      Acessar Gestor Jurídico
+                    </a>
+                  </div>
+
+                </td>
+              </tr>
+
+              <tr>
+                <td style="background-color: #f8fafc; padding: 20px; text-align: center; border-top: 1px solid #e2e8f0;">
+                  <p style="color: #94a3b8; font-size: 12px; margin: 0;">
+                    Este é um e-mail automático enviado pelo seu assistente virtual.<br>
+                    Por favor, não responda a este e-mail.
+                  </p>
+                </td>
+              </tr>
+
+            </table>
+
+          </td>
+        </tr>
+      </table>
+
+    </body>
+    </html>
     `;
-    }
 
-
-    if (tipo === 'PRIMEIRO_CONTATO') {
-      subject = 'Cliente entrou em contato';
-
-      html = `
-      Cliente entrou em contato.
-
-      Telefone: ${conversation.customerPhone}
-      Nome: ${conversation.customerName || 'Não informado'}
-    `;
-    }
+    const emails = advogados.map(adv => adv.email);
 
     await mail.sendEmail(
-      advogadoAdm.email,
+      emails.join(', '),
       subject,
       html
     );
   }
 
-
-  private detectNovoAtendimento(texto: string): boolean {
-    const t = texto.toLowerCase();
-
-    return [
-      'novo atendimento',
-      'preciso de ajuda',
-      'quero ajuda',
-      'quero falar',
-      'tenho um problema',
-      'entrar com ação',
-      'abrir atendimento'
-    ].some(p => t.includes(p));
-  }
-
-  private detectConsultaProcesso(texto: string): boolean {
-    const t = texto.toLowerCase();
-
-    return [
-      'meu processo',
-      'andamento',
-      'como está',
-      'atualização',
-      'consultar processo',
-      'ver processo',
-      'quero saber do caso',
-      'notícia do processo',
-      'tem novidade',
-      'como anda'
-    ].some(p => t.includes(p));
-  }
 
 
 private async handleRetornoCliente(texto: string, conversation: any) {

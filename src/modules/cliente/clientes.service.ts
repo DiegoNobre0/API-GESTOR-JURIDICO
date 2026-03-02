@@ -66,4 +66,12 @@ async list(search?: string) {
       take: 50
     });
   }
+
+
+  // Excluir cliente
+  async delete(id: string) {
+    return await prisma.cliente.delete({
+      where: { id }
+    });
+  }
 }

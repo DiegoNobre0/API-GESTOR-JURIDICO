@@ -134,4 +134,24 @@ export class ClientesController {
       return reply.status(500).send({ error: 'Erro interno ao consultar o banco de dados.' });
     }
   }
+
+  // DELETE /clientes/:id
+  async delete(req: FastifyRequest, rep: FastifyReply) {
+    const paramsSchema = z.object({
+      id: z.string()
+    });
+
+    const { id } = paramsSchema.parse(req.params);
+
+    try {
+      await this.service.delete(id);
+      return rep.send({ message: "Cliente excluído com sucesso" });
+    } catch (error: any) {
+      // Erro P2003: Violação de chave estrangeira (Cliente tem processos vinculados)
+      if (error.code === 'P2003') {
+        return rep.status(400).send({ error: "Não é possível excluir este cliente, pois existem processos vinculados a ele." });
+      }
+      return rep.status(500).send({ error: "Erro interno ao tentar excluir o cliente." });
+    }
+  }
 }
