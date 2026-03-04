@@ -2,7 +2,7 @@ import { generateObject } from 'ai';
 import { z } from 'zod';
 import { FinanceiroService } from '../../modules/financeiro/financeiro.service.js';
 import { AgendaService } from '../../modules/agenda/agenda.service.js';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { openai } from '@ai-sdk/openai';
 
 // 🧠 CACHE EM MEMÓRIA: Guarda as ações pendentes de confirmação
 const pendencias = new Map<string, any>();
@@ -10,10 +10,7 @@ const pendencias = new Map<string, any>();
 export class AdvogadoAssistantService {
     private financeiroService = new FinanceiroService();
     private agendaService = new AgendaService();
-
-    private google = createGoogleGenerativeAI({
-        apiKey: process.env.GEMINI_API_KEY || '',
-    });
+   
 
     // 👇 Usado para Compromissos (DateTime)
     private formatarDataIso(dataString?: string | null): string {
@@ -85,7 +82,7 @@ export class AdvogadoAssistantService {
         }
 
         // ==========================================================
-        // 2. EXTRAÇÃO COM A IA (Gemini 2.5 Flash)
+        // 2. EXTRAÇÃO COM A IA
         // ==========================================================
         const agora = new Date();
         const dataHojeIso = agora.toISOString().split('T')[0];
@@ -97,7 +94,7 @@ export class AdvogadoAssistantService {
             ] as const;
 
             const { object } = await generateObject({
-                model: this.google('gemini-2.5-flash'),
+                model: openai('gpt-4o-mini'),
                 temperature: 0,
                 schema: z.object({
                     acao: z.enum(['CRIAR_FINANCEIRO', 'CRIAR_COMPROMISSO', 'CRIAR_TAREFA', 'BATER_PAPO']),

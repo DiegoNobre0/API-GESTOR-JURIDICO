@@ -1,9 +1,9 @@
 import cron from 'node-cron';
 import { generateText } from 'ai';
-import { groq } from '@ai-sdk/groq';
 import { prisma } from '../../lib/prisma.js';
 import { DatajudService } from './datajud.service.js';
 import { MailService } from './mail-service.js';
+import { openai } from '@ai-sdk/openai';
 
 
 console.log('📌 [SISTEMA] Arquivo de agendamento do Datajud (04h00) carregado na memória!');
@@ -103,7 +103,7 @@ cron.schedule('0 4 * * *', async () => {
 
           try {
             const { text } = await generateText({
-              model: groq('llama-3.3-70b-versatile'),
+              model: openai('gpt-4o-mini'),
               temperature: 0.2,
               system: `
 Você é assistente jurídico da RCS Gestão Jurídica.

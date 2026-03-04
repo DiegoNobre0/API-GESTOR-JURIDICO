@@ -6,17 +6,12 @@ import type { FastifyInstance } from 'fastify';
 import type { IncomingMessage, MetaMessagePayload } from './whatsapp.types.js';
 import { DocumentAnalysisService } from '../../infra/services/document-analysis.service.js';
 import { normalizarTipoDocumento } from '../../infra/services/utils/documentos.js';
+import OpenAI, { toFile } from "openai";
+import { Readable } from "stream";
 
-
-interface AnaliseDocumento {
-  legivel: boolean;
-  lado?: 'FRENTE' | 'VERSO' | 'FRENTE_E_VERSO';
-  camposExtraidos: {
-    nome?: string;
-    rg?: string;
-    cpf?: string;
-  };
-}
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export class WhatsappService {
   private version = 'v24.0';
@@ -24,6 +19,7 @@ export class WhatsappService {
   private token = process.env.WHATSAPP_ACCESS_TOKEN;
   private storageService: StorageService; // <--- Instância do Storage
   private docAnalysisService: DocumentAnalysisService;
+
 
   constructor(
     private app: FastifyInstance,
@@ -112,9 +108,9 @@ export class WhatsappService {
     }
   }
 
- 
 
-private async handleIncomingMedia(
+
+  private async handleIncomingMedia(
     message: IncomingMessage,
     conversation: any
   ) {
@@ -196,7 +192,7 @@ private async handleIncomingMedia(
       // ============================
       // 3. SE FOR ÁUDIO (TRANSCRIÇÃO E RESPOSTA)
       // ============================
-      if (mediaType === 'audio') {
+      if (mediaType === 'audio' && workflowStep !== 'COLETA_DOCS_EXTRA') {
         const textoTranscrito = await this.transcreverAudio(fileBuffer, fileName);
 
         if (!textoTranscrito) {
@@ -233,7 +229,7 @@ private async handleIncomingMedia(
         // Agora o código vai descer pro passo 4 e salvar o áudio nas provas.
       }
 
-      // ============================
+ // ============================
       // 4. SALVAR A MÍDIA COMO PROVA (IMAGEM, PDF, VÍDEO E ÁUDIO)
       // ============================
       let tipoDocumento: any = 'COMPLEMENTAR';
@@ -242,19 +238,26 @@ private async handleIncomingMedia(
 
       // Se for imagem na fase de coleta inicial, tenta OCR
       if (workflowStep === 'COLETA_DOCS' && mediaType === 'image') {
-        const pendentes = await this.getDocumentosPendentes(conversation.id);
+        etapaDocumento = 'ESSENCIAL';
 
-        if (pendentes.length > 0) {
-          tipoDocumento = pendentes[0];
-          etapaDocumento = 'ESSENCIAL';
+        // 1️⃣ Faz apenas UMA chamada inteligente para a IA
+        analiseIA = await this.docAnalysisService.analyzeDocument(fileBuffer);
 
-          analiseIA = await this.docAnalysisService.analyzeDocument(fileBuffer, tipoDocumento);
+        if (!analiseIA || !analiseIA.legivel || analiseIA.tipo_identificado === 'OUTROS') {
+          console.log('⚠️ Documento ilegível, tipo não reconhecido ou não é útil no momento.');
+          // Aqui você pode retornar um sendText pedindo pro usuário enviar uma foto mais nítida
+          return;
+        }
 
-          if (analiseIA?.legivel) {
-            if (analiseIA.tipo_identificado === 'CNH') tipoDocumento = 'CNH';
-            if (analiseIA.tipo_identificado === 'RG') tipoDocumento = 'RG';
-            if (analiseIA.tipo_identificado === 'COMPROVANTE_RESIDENCIA') tipoDocumento = 'COMP_RES';
-          }
+        // 2️⃣ Mapeia o resultado da IA para a nomenclatura do seu Checklist
+        if (analiseIA.tipo_identificado === 'RG') {
+          tipoDocumento = 'RG';
+        } 
+        else if (analiseIA.tipo_identificado === 'CNH') {
+          tipoDocumento = 'CNH'; // Se o seu checklist aceita CNH no lugar do RG, pode por 'RG' aqui também
+        } 
+        else if (analiseIA.tipo_identificado === 'COMPROVANTE_RESIDENCIA') {
+          tipoDocumento = 'COMP_RES';
         }
       }
 
@@ -270,7 +273,7 @@ private async handleIncomingMedia(
           conversationId: conversation.id,
           tipo: tipoDocumento,
           etapa: etapaDocumento,
-          mediaUrl: uploadResult.url, 
+          mediaUrl: uploadResult.url,
           fileName: `${tipoDocumento}.${extension}`,
           mimeType,
           validado: etapaDocumento === 'COMPLEMENTAR' ? true : analiseIA?.legivel ?? false,
@@ -279,22 +282,76 @@ private async handleIncomingMedia(
       });
 
       // Atualiza OCR no banco se tiver extraído algo
+      // Atualiza OCR no banco se tiver extraído algo
       if (etapaDocumento === 'ESSENCIAL' && analiseIA?.legivel) {
-        const patch: any = {};
-        if (analiseIA.lado === 'FRENTE_E_VERSO') { patch.extracted_RG_FRENTE_legivel = true; patch.extracted_RG_VERSO_legivel = true; }
-        if (analiseIA.lado === 'FRENTE') patch.extracted_RG_FRENTE_legivel = true;
-        if (analiseIA.lado === 'VERSO') patch.extracted_RG_VERSO_legivel = true;
+
+        const tempAtual = (conversation.tempData as any) ?? {};
+        const prefix = `extracted_${tipoDocumento}`;
+
+        const patch: any = {
+          [`${prefix}_legivel`]: true,
+        };
+
+        if (analiseIA.nome_completo) {
+          patch[`${prefix}_nome`] = analiseIA.nome_completo;
+        }
+
+        // ==========================================
+        // 🛡️ TRATAMENTO ANTI-CONFUSÃO (RG vs CPF)
+        // ==========================================
+        let rgEncontrado = analiseIA.rg_numero;
+        let cpfEncontrado = analiseIA.cpf_numero;
+
+        const rgLimpo = rgEncontrado ? String(rgEncontrado).replace(/\D/g, '') : '';
+        const cpfLimpo = cpfEncontrado ? String(cpfEncontrado).replace(/\D/g, '') : '';
+
+        // Se o suposto RG tem 11 dígitos (tamanho exato de um CPF) e o CPF veio vazio, a IA inverteu!
+        if (!cpfEncontrado && rgLimpo.length === 11) {
+          cpfEncontrado = rgEncontrado; // Joga o valor pro CPF
+          rgEncontrado = null;          // Limpa o RG falso
+        }
+
+        // Se o suposto CPF tem menos de 11 dígitos (tamanho comum de RG) e o RG veio vazio, a IA inverteu pro outro lado!
+        if (!rgEncontrado && cpfLimpo.length > 5 && cpfLimpo.length < 11) {
+          rgEncontrado = cpfEncontrado; // Joga o valor pro RG
+          cpfEncontrado = null;         // Limpa o CPF falso
+        }
+
+        // ✅ Agora sim, salva os valores validados e corrigidos
+        if (rgEncontrado) {
+          patch[`${prefix}_rg`] = rgEncontrado;
+        }
+
+        if (cpfEncontrado) {
+          patch[`${prefix}_cpf`] = cpfEncontrado;
+        }
+        // ==========================================
+
+        // Endereço apenas para comprovante
+        if (tipoDocumento === 'COMP_RES' && analiseIA.endereco_completo) {
+          patch[`${prefix}_endereco`] = analiseIA.endereco_completo;
+        }
+
+        // Controle de frente e verso
+        if (analiseIA.lado === 'FRENTE_E_VERSO') {
+          patch[`${prefix}_FRENTE_legivel`] = true;
+          patch[`${prefix}_VERSO_legivel`] = true;
+        }
+
+        if (analiseIA.lado === 'FRENTE') {
+          patch[`${prefix}_FRENTE_legivel`] = true;
+        }
+
+        if (analiseIA.lado === 'VERSO') {
+          patch[`${prefix}_VERSO_legivel`] = true;
+        }
 
         await prisma.conversation.update({
           where: { id: conversation.id },
           data: {
             tempData: {
-              ...(conversation.tempData as object ?? {}),
-              [`extracted_${tipoDocumento}_nome`]: analiseIA.nome_completo,
-              [`extracted_${tipoDocumento}_rg`]: analiseIA.rg_numero,
-              [`extracted_${tipoDocumento}_cpf`]: analiseIA.cpf_numero,
-              [`extracted_${tipoDocumento}_endereco`]: analiseIA.endereco_completo,
-              [`extracted_${tipoDocumento}_legivel`]: true,
+              ...tempAtual,
+              ...patch,
             },
           },
         });
@@ -318,10 +375,10 @@ private async handleIncomingMedia(
       // ============================
       // 5. RESPOSTA DO BOT PÓS-MÍDIA
       // ============================
-      
+
       // 🔴 SE FOR ÁUDIO, PARA AQUI! O bot já respondeu no passo 3 baseado no texto transcrito.
       // E se o cliente não estiver na fase de coleta de documentos, também para aqui.
-      if (mediaType === 'audio' || !estaEmFaseDeDocs) return;
+      // if (mediaType === 'audio' || !estaEmFaseDeDocs) return;
 
       const pendentesAgora = await this.getDocumentosPendentes(conversation.id);
 
@@ -331,13 +388,13 @@ private async handleIncomingMedia(
           'Mídia recebida! Pode continuar enviando provas ou digite *FINALIZAR*.',
           conversation.id
         );
-        return; 
-      } 
+        return;
+      }
       else if (pendentesAgora.length === 0) {
-        await prisma.conversation.update({
-          where: { id: conversation.id },
-          data: { workflowStep: 'COLETA_DOCS_EXTRA' },
-        });
+        // await prisma.conversation.update({
+        //   where: { id: conversation.id },
+        //   data: { workflowStep: 'COLETA_DOCS_EXTRA' },
+        // });
         const promptDoBot = `
 [SISTEMA]:
 Perfeito! Recebemos todas as documentações básicas.
@@ -345,12 +402,12 @@ Explique que agora ele pode enviar provas adicionais (fotos, vídeos, áudios, p
 Diga que quando terminar, deve digitar FINALIZAR.`;
         const aiResponse = await this.chatbotService.chat(promptDoBot, conversation.customerPhone);
         if (aiResponse) await this.sendText(conversation.customerPhone, aiResponse, conversation.id);
-      } 
+      }
       else {
         const proximo = pendentesAgora[0];
         let nomeProximo = proximo === 'RG' ? 'RG ou CNH (foto legível)' : 'Comprovante de Residência';
         const feedback = analiseIA && !analiseIA.legivel ? `A imagem enviada ficou um pouco ilegível.` : `Recebido com sucesso.`;
-        
+
         const promptDoBot = `[SISTEMA]: ${feedback}. Peça imediatamente o próximo documento: ${nomeProximo}.`;
         const aiResponse = await this.chatbotService.chat(promptDoBot, conversation.customerPhone);
         if (aiResponse) await this.sendText(conversation.customerPhone, aiResponse, conversation.id);
@@ -779,7 +836,7 @@ Diga que quando terminar, deve digitar FINALIZAR.`;
   // }
 
   // --- Auxiliar: Upload para Meta (Versão Buffer) ---
- private async uploadMediaToMeta(fileBuffer: Buffer, mimeType: string, fileName: string): Promise<string> {
+  private async uploadMediaToMeta(fileBuffer: Buffer, mimeType: string, fileName: string): Promise<string> {
     // Usa o FormData nativo do Node.js
     const form = new FormData();
 
@@ -810,25 +867,25 @@ Diga que quando terminar, deve digitar FINALIZAR.`;
     return data.id;
   }
 
- private async callMetaApi(endpoint: string, method: string, body: any) {
-  const res = await fetch(`${this.baseUrl}${endpoint}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${this.token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  private async callMetaApi(endpoint: string, method: string, body: any) {
+    const res = await fetch(`${this.baseUrl}${endpoint}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
 
-  const json = await res.json(); // 🔥 LÊ UMA ÚNICA VEZ
+    const json = await res.json(); // 🔥 LÊ UMA ÚNICA VEZ
 
-  if (!res.ok) {
-    console.error('❌ ERRO META:', json);
-    throw new Error(JSON.stringify(json));
+    if (!res.ok) {
+      console.error('❌ ERRO META:', json);
+      throw new Error(JSON.stringify(json));
+    }
+
+    return json; // ✅ retorna o mesmo objeto já lido
   }
-
-  return json; // ✅ retorna o mesmo objeto já lido
-}
 
 
   async markAsRead(messageId: string) {
@@ -846,34 +903,25 @@ Diga que quando terminar, deve digitar FINALIZAR.`;
     return 'document';
   }
 
-async transcreverAudio(audioBuffer: Buffer, fileName: string): Promise<string> {
-      try {
-        console.log('🎙️ [ÁUDIO] Enviando para transcrição (Groq Whisper)...');
-        
-        const formData = new FormData();
-        // Converte o Buffer para Blob (Padrão nativo)
-        const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: 'audio/ogg' });
+  async transcreverAudio(audioBuffer: Buffer, fileName: string): Promise<string> {
+    try {
+      console.log('🎙️ [ÁUDIO] Enviando para transcrição (OpenAI Whisper)...');
 
-        // O Whisper exige um nome de arquivo com extensão (.ogg que é o padrão do zap)
-        formData.append('file', audioBlob, fileName);
-        formData.append('model', 'whisper-large-v3-turbo'); // Modelo super rápido da Groq
-        formData.append('response_format', 'json');
-        formData.append('language', 'pt'); // Força o português
-  
-        const response = await axios.post('https://api.groq.com/openai/v1/audio/transcriptions', formData, {
-          headers: {
-            // Não usamos mais formData.getHeaders(), o Axios cuida disso automaticamente
-            // quando recebe um FormData nativo no Node moderno.
-            'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
-          }
-        });
-  
-        console.log(`✨ [ÁUDIO TRANSCRITO]: "${response.data.text}"`);
-        return response.data.text;
-      } catch (error) {
-        console.error('❌ Erro ao transcrever áudio:', error);
-        return "";
-      }
+      const file = await toFile(audioBuffer, fileName);
+
+      const transcription = await openai.audio.transcriptions.create({
+        file,
+        model: "gpt-4o-mini-transcribe",
+        language: "pt",
+      });
+
+      console.log(`✨ [ÁUDIO TRANSCRITO]: "${transcription.text}"`);
+      return transcription.text;
+
+    } catch (error) {
+      console.error('❌ Erro ao transcrever áudio:', error);
+      return "";
+    }
   }
 
 }

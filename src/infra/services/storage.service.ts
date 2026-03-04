@@ -30,28 +30,28 @@ export class StorageService {
   }
 
   // 👇 NOVA FUNÇÃO DE OTIMIZAÇÃO
-  private async otimizarArquivo(fileBuffer: Buffer, extension: string): Promise<Buffer> {
+private async otimizarArquivo(fileBuffer: Buffer, extension: string): Promise<Buffer> {
     const cleanExt = extension.replace('.', '').toLowerCase();
 
     try {
-      // Se for imagem, aplicamos a compressão inteligente
+      // Se for imagem, aplicamos uma compressão LEVE para não prejudicar o OCR e as provas judiciais
       if (['jpg', 'jpeg', 'png', 'webp'].includes(cleanExt)) {
         console.log(`🖼️ Otimizando imagem ${cleanExt}... (Tamanho original: ${(fileBuffer.length / 1024).toFixed(2)} KB)`);
         
         const pipeline = sharp(fileBuffer)
-          // Limita o tamanho máximo para 1600px (Suficiente para ler qualquer RG/Documento perfeitamente)
-          // withoutEnlargement: true impede que imagens pequenas sejam esticadas
-          .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true });
+          // 2048px é o sweet-spot recomendado pela OpenAI para o modo "High Detail" de visão
+          .resize({ width: 2048, height: 2048, fit: 'inside', withoutEnlargement: true });
 
-        // Aplica a compressão dependendo do formato
+        // Aplica a compressão dependendo do formato mantendo altíssima qualidade (95%+)
         if (cleanExt === 'png') {
-          // PNGs suportam compressão de nível 8 (máxima eficiência)
+          // PNG é lossless, o nível 8 apenas demora mais para comprimir, mas não perde qualidade
           return await pipeline.png({ compressionLevel: 8 }).toBuffer();
         } else if (cleanExt === 'webp') {
-          return await pipeline.webp({ quality: 80 }).toBuffer();
+          return await pipeline.webp({ quality: 95 }).toBuffer(); // Subimos de 80 para 95
         } else {
           // Para JPG / JPEG
-          return await pipeline.jpeg({ quality: 80, mozjpeg: true }).toBuffer();
+          // Subimos a qualidade de 80 para 95. Evita borrar números pequenos como CPF.
+          return await pipeline.jpeg({ quality: 95, mozjpeg: true }).toBuffer();
         }
       }
 

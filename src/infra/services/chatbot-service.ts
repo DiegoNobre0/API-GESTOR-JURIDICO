@@ -1,10 +1,9 @@
 import { generateText, tool } from 'ai';
-import { groq } from '@ai-sdk/groq';
 import { z } from 'zod';
 import { prisma } from '../../lib/prisma.js';
+import { openai } from '@ai-sdk/openai';
 
-
-
+import { generateObject } from 'ai';
 import { detectGreeting } from './utils/greeting.util.js';
 import type { ModelMessage } from 'ai';
 import { AdvogadoAssistantService } from './assistant-financeiro.service.js';
@@ -93,18 +92,20 @@ const registrarFatosSchema = z.object({
   empresa: z
     .string()
     .min(2)
+    .refine(val => !/não informad|não sei/i.test(val), 'VOCÊ PRECISA PERGUNTAR A EMPRESA. Não envie placeholders.')
     .describe('Nome da empresa responsável pelo ocorrido'),
 
   data_do_ocorrido: z
     .string()
-    .describe('Data ou período aproximado do ocorrido'),
+    .min(4)
+    .refine(val => !/não informad|não sei|não mencionad/i.test(val), 'VOCÊ PRECISA PERGUNTAR A DATA. Não envie placeholders.')
+    .describe('Data ou período aproximado do ocorrido. OBRIGATÓRIO PERGUNTAR.'),
 
   prejuizo: z
     .string()
     .min(10)
-    .describe(
-      'Descrição dos prejuízos financeiros, profissionais ou pessoais sofridos'
-    ),
+    .refine(val => !/não informad|não sei/i.test(val), 'VOCÊ PRECISA PERGUNTAR O PREJUÍZO. Não envie placeholders.')
+    .describe('Descrição dos prejuízos financeiros, profissionais ou pessoais sofridos'),
 });
 
 const definirTipoCasoSchema = z.object({
@@ -152,12 +153,18 @@ async function classificarTipoCasoPorFatos(fatos: {
   data_do_ocorrido?: string;
   prejuizo?: string;
 }): Promise<ClassificacaoResult> {
-  const { text } = await generateText({
-    model: groq('llama-3.3-70b-versatile'),
-    temperature: 0.2, // Reduzi um pouco para garantir um JSON mais estrito
-    system: `
-Você é um classificador jurídico sênior. 
-Analise os fatos fornecidos e retorne um objeto JSON estrito com duas chaves: "tipoCaso" e "qualificacaoLead".
+
+  try {
+    const { object } = await generateObject({
+      model: openai('gpt-4o-mini'),
+      temperature: 0,
+      schema: z.object({
+        tipoCaso: z.enum(['VOO', 'BANCO', 'SAUDE', 'BPC', 'INSS', 'GOV', 'GERAL']),
+        qualificacaoLead: z.enum(['QUENTE', 'MORNO', 'FRIO'])
+      }),
+      system: `
+Você é um classificador jurídico sênior.
+Analise os fatos e retorne exclusivamente os campos definidos no schema.
 
 REGRAS DE CLASSIFICAÇÃO PARA "tipoCaso" (Escolha APENAS UMA):
 - VOO: Atraso, cancelamento, overbooking, bagagem
@@ -172,46 +179,25 @@ REGRAS DE CLASSIFICAÇÃO PARA "qualificacaoLead" (Temperatura do cliente):
 - QUENTE: Relato claro, prejuízo financeiro ou moral evidente, empresa bem identificada e data do ocorrido recente. Causa pronta para atuar.
 - MORNO: Tem potencial, mas o relato está confuso, faltam detalhes cruciais ou o prejuízo é muito baixo.
 - FRIO: Relato sem sentido, nenhum dano claro, ou caso muito antigo (risco alto de prescrição).
-
-MUITO IMPORTANTE: Retorne APENAS um JSON válido. Não inclua crases, formatações markdown (\`\`\`json) ou textos explicativos.
-EXEMPLO DE SAÍDA: {"tipoCaso": "VOO", "qualificacaoLead": "QUENTE"}
-`,
-    prompt: `
+      `,
+      prompt: `
 FATOS RELATADOS:
 ${JSON.stringify(fatos)}
-`,
-  });
+      `,
+    });
 
-  // Valores padrão de segurança (Fallback)
-  let tipo: TipoCaso = 'GERAL';
-  let temperatura: TemperaturaLead = 'MORNO';
-
-  try {
-    // A IA retorna o JSON em formato de texto. Precisamos converter para Objeto.
-    const jsonLimpo = text.replace(/```json/g, '').replace(/```/g, '').trim();
-    const resultado = JSON.parse(jsonLimpo);
-
-    const permitidosCaso: TipoCaso[] = ['VOO', 'BANCO', 'SAUDE', 'BPC', 'INSS', 'GOV', 'GERAL'];
-    const permitidosTemperatura: TemperaturaLead[] = ['QUENTE', 'MORNO', 'FRIO'];
-
-    // Valida se a IA não "inventou" um tipo novo
-    if (permitidosCaso.includes(resultado.tipoCaso?.toUpperCase())) {
-      tipo = resultado.tipoCaso.toUpperCase() as TipoCaso;
-    }
-    
-    if (permitidosTemperatura.includes(resultado.qualificacaoLead?.toUpperCase())) {
-      temperatura = resultado.qualificacaoLead.toUpperCase() as TemperaturaLead;
-    }
+    // object já vem validado pelo Zod
+    return object;
 
   } catch (error) {
-    console.error("❌ Erro ao fazer parse do JSON da IA:", error, "Retorno Original:", text);
-    // Se der erro, ele vai retornar os valores padrão GERAL e MORNO
-  }
+    console.error("❌ Erro na classificação IA:", error);
 
-  return {
-    tipoCaso: tipo,
-    qualificacaoLead: temperatura
-  };
+    // Fallback seguro
+    return {
+      tipoCaso: 'GERAL',
+      qualificacaoLead: 'MORNO'
+    };
+  }
 }
 
 function gerarMensagemDocsExtras(tipoCaso: TipoCaso) {
@@ -287,7 +273,7 @@ const CHECKLISTS: Record<TipoCaso, DocumentoChecklist[]> = {
     { codigo: 'RG', descricao: 'RG ou CNH' },
     { codigo: 'GOVBR', descricao: 'Print da conta GOV.BR ou dados de acesso' },
   ],
-  GERAL: [    
+  GERAL: [
     { codigo: 'PROVAS', descricao: 'Todos os documentos, prints de conversas, fotos e provas que você tiver relacionadas ao seu caso' },
   ],
 };
@@ -299,8 +285,9 @@ const CHECKLISTS: Record<TipoCaso, DocumentoChecklist[]> = {
 export class ChatbotService {
   constructor() { }
 
-  async chat(message: string, customerPhone: string) {
+  async   chat(message: string, customerPhone: string) {
 
+    
 
     let conversation = await prisma.conversation.findUnique({
       where: { customerPhone },
@@ -309,7 +296,7 @@ export class ChatbotService {
     assertConversation(conversation);
 
     const texto = message.trim();
-    const agora = new Date();   
+    const agora = new Date();
 
 
     if (this.detectPedidoAjuda(texto) && conversation.workflowStep !== 'COLETA_FATOS') {
@@ -331,7 +318,7 @@ export class ChatbotService {
       return "♻️ *Histórico resetado!* Seus dados e documentos foram apagados. Você já pode enviar um 'Oi' para iniciar um novo teste.";
     }
     if (texto.toLowerCase().startsWith('/dados')) {
-      
+
       let numeroLimpo = customerPhone.replace(/\D/g, '');
 
       if (numeroLimpo.length >= 12 && numeroLimpo.startsWith('55')) {
@@ -344,7 +331,7 @@ export class ChatbotService {
       const ddd = numeroLimpo.substring(0, 2);
       const final4 = numeroLimpo.slice(-4);
       const meio4 = numeroLimpo.slice(-8, -4);
-    
+
       const advogado = await prisma.user.findFirst({
         where: {
           AND: [
@@ -352,13 +339,13 @@ export class ChatbotService {
             { telefone: { contains: meio4 } },
             { telefone: { contains: final4 } }
           ],
-          ativo: true 
+          ativo: true
         }
       });
-      
+
       if (advogado) {
         if (!comandoLimpo) {
-           return `Olá ${advogado.nome}! Para lançar despesas, digite o comando e o valor. Exemplo:\n\n*/dados: paguei 150 reais de luz*`;
+          return `Olá ${advogado.nome}! Para lançar despesas, digite o comando e o valor. Exemplo:\n\n*/dados: paguei 150 reais de luz*`;
         }
 
         const assistente = new AdvogadoAssistantService();
@@ -368,7 +355,7 @@ export class ChatbotService {
       }
     }
 
-     if (conversation.workflowStep === 'FINALIZADO') {
+    if (conversation.workflowStep === 'FINALIZADO') {
       return this.handleRetornoCliente(texto, conversation);
     }
 
@@ -483,7 +470,7 @@ Em breve você receberá atualizações.
 
     // 🚨 CURTO-CIRCUITO PARA DOCUMENTOS
     if (documentosRecebidos.length > 0 && estadoAtual === 'COLETA_DOCS') {
-      if (documentosPendentesAtuais.length === 0) {
+      if (documentosRecebidos.length === 2) {
         await prisma.conversation.update({
           where: { customerPhone },
           data: { workflowStep: 'COLETA_DOCS_EXTRA' },
@@ -506,9 +493,10 @@ Em breve você receberá atualizações.
 
           await prisma.conversation.update({
             where: { customerPhone },
-            data: { 
+            data: {
               tipoCaso: tipoInferido.tipoCaso,
-              qualificacaoLead: tipoInferido.qualificacaoLead,},
+              qualificacaoLead: tipoInferido.qualificacaoLead,
+            },
           });
 
           conversation = await prisma.conversation.findUnique({
@@ -523,7 +511,7 @@ Em breve você receberá atualizações.
       }
 
       return `Documento recebido!   
-  Agora preciso de: *${documentosPendentesAtuais.map(d => d.descricao).join(', ')}*.`;
+      Agora preciso de: *${documentosPendentesAtuais.map(d => d.descricao).join(', ')}*.`;
     }
 
     if (estadoAtual === 'COLETA_DOCS_EXTRA') {
@@ -580,7 +568,7 @@ Assim que finalizar, me avise por aqui.
        IA
     ----------------------------- */
     const result = await generateText({
-      model: groq('llama-3.3-70b-versatile'),
+      model: openai('gpt-4o-mini'),
       system: this.buildSystemPrompt(buildContext(conversation)),
       messages,
       tools: {
@@ -601,7 +589,12 @@ Assim que finalizar, me avise por aqui.
       textoResposta = textoResposta
         .replace(/<function=[\s\S]*?<\/function>/g, '') // Remove a tag completa
         .replace(/<tool_code>[\s\S]*?<\/tool_code>/g, '') // Previne outros formatos comuns
-        .trim();
+        .trim();     
+    }
+
+    if (toolCalls.some(t => t.toolName === 'registrarFatos')) {
+      textoResposta = "Entendi perfeitamente a situação. Vou organizar essas informações para a nossa equipe jurídica.";
+      console.log('✅ [TOOL CALL DETECTADA] Tool registrarFatos foi acionada com sucesso.');
     }
 
     console.log('[DEBUG] IA FALA:', textoResposta);
@@ -638,6 +631,11 @@ Assim que finalizar, me avise por aqui.
 
       // 2. PRIORIDADE 1: Salvar Dados (registrarFatos)
       if (callRegistrar) {
+
+        if (conversation.workflowStep !== 'COLETA_FATOS') {
+          console.log('[DEBUG] Ignorando registrarFatos fora da etapa correta');
+          return textoResposta || null;
+        }
         const rawArgs = (callRegistrar as any).args ?? (callRegistrar as any).input ?? {};
         const args = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;
 
@@ -653,16 +651,32 @@ Assim que finalizar, me avise por aqui.
           return this.responder({
             intent: 'AGUARDAR_RESPOSTA',
             conversation: buildContext(conversation),
+            contexto: {
+              instrucaoExtra: "Você tentou registrar fatos incompletos. Faça a pergunta ao cliente sobre a informação que está faltando (Data, Empresa, etc) em UMA frase curta e sem formatar em lista."
+            }
           });
         }
+
+        type TempDataFatos = {
+          dinamica_do_dano?: string;
+          empresa?: string;
+          data_do_ocorrido?: string;
+          prejuizo?: string;
+          aguardandoDocumentos?: boolean;
+        };
+
+        const currentTempData = (conversation.tempData ?? {}) as TempDataFatos;
 
         // 1. Salva no banco
         await prisma.conversation.update({
           where: { customerPhone },
           data: {
             tempData: {
-              ...(conversation.tempData as object ?? {}),
-              ...args,
+              ...currentTempData,
+              dinamica_do_dano: currentTempData.dinamica_do_dano ?? args.dinamica_do_dano,
+              empresa: currentTempData.empresa ?? args.empresa,
+              data_do_ocorrido: currentTempData.data_do_ocorrido ?? args.data_do_ocorrido,
+              prejuizo: currentTempData.prejuizo ?? args.prejuizo,
             },
           },
         });
@@ -679,10 +693,6 @@ Assim que finalizar, me avise por aqui.
         const temEmpresa = !!fatos?.empresa;
         const temData = !!fatos?.data_do_ocorrido;
         const temPrejuizo = !!fatos?.prejuizo;
-
-        // if (temDinamica && temEmpresa && temData && temPrejuizo) {
-        //   classificarTipoCasoPorFatos(fatos)
-        //       }
 
 
         if (
@@ -838,47 +848,45 @@ Sua missão é acolher o cliente, entender o problema e organizar a documentaç�
 - Se faltar qualquer informação, faça UMA pergunta objetiva e aguarde resposta.
 - Apenas chame "registrarFatos" quando todos os campos estiverem totalmente preenchidos.
 
+Enquanto estiver coletando dados:
+- Pense como uma pessoa conversando no WhatsApp.
+- Não pense como alguém preenchendo um formulário visível.
+- O formulário é interno e invisível.
+- O cliente não deve perceber checklist.
 
-### REGRA CRÍTICA – REGISTRO DE FATOS (OBRIGATÓRIO)
+Durante a coleta, sua resposta deve parecer uma conversa natural, não um resumo administrativo.
 
-Ao chamar a tool "registrarFatos":
+### REGRA CRÍTICA – REGISTRO DE FATOS (OBRIGATÓRIO) E SAÍDA DE TEXTO
 
+⚠️ PROIBIÇÃO ABSOLUTA DE ROLEPLAY E RESUMOS NO CHAT ⚠️
+1. Você é a CAROL (Assistente). NUNCA gere textos se passando pelo cliente.
+2. NUNCA envie resumos, bullet points ou confirme os dados que você coletou no chat. O cliente NÃO PODE ver o que você vai salvar.
+3. Não avise que vai chamar a tool ou registrar algo.
+
+🟢 COMO VOCÊ DEVE AGIR (MUITO IMPORTANTE):
+- Se ainda faltam dados: Faça apenas UMA pergunta curta e direta para o cliente. Exemplo: "E quando exatamente aconteceu esse voo?"
+- Se você já tem os 4 pilares (Dano, Empresa, Data e Prejuízo): 
+  1. CHAME A FERRAMENTA 'registrarFatos'.
+  2. ⚠️ DEIXE SUA RESPOSTA DE TEXTO COMPLETAMENTE VAZIA. Não escreva absolutamente nenhuma palavra no chat se você for chamar a ferramenta. Não gere blocos de código. Apenas ative a ferramenta silenciosamente.
+
+Ao preencher a ferramenta "registrarFatos":
 - NÃO resuma.
-- NÃO use rótulos genéricos como:
-  "atraso de voo", "problema bancário", "negativa do plano".
+- NÃO use rótulos genéricos como: "atraso de voo", "problema bancário".
+- A descrição DEVE conter: o que aconteceu, por quanto tempo, impacto real na vida do cliente e consequências práticas.
 
-- A descrição DEVE conter:
-  • o que aconteceu
-  • por quanto tempo
-  • impacto real na vida do cliente
-  • consequências práticas (perda de tempo, compromisso, gastos, estresse)
-
-Exemplo RUIM:
-"atraso de voo"
-
-Exemplo CORRETO:
-"O voo sofreu atraso de aproximadamente 12 horas, fazendo com que o cliente permanecesse no aeroporto durante todo o período, perdendo uma reunião profissional importante e enfrentando desgaste físico e emocional."
+Exemplo de uso correto da Tool "registrarFatos":
+- dinamica_do_dano: "O voo sofreu atraso de aproximadamente 12 horas, fazendo com que o cliente permanecesse no aeroporto durante todo o período, perdendo uma reunião profissional importante e enfrentando desgaste físico e emocional."
+- empresa: "Gol"
+- data_do_ocorrido: "03/03/26"
+- prejuizo: "Perda de reunião importante e gasto de R$500 com hospedagem"
 
 
 REGRA UNIVERSAL (OBRIGATÓRIA EM TODOS OS CASOS)
-
-Assim que o cliente explicar o problema, antes de qualquer nova pergunta:
-
-Você DEVE sempre:
-
-Demonstrar que compreendeu a situação
-
-Informar que o escritório é especialista nesse tipo de caso
-
-Estrutura obrigatória:
-
-"Entendi, imagino o transtorno que isso causou.
-
-Nós somos especialistas em resolver situações como essa e vamos te ajudar."
-
-Nunca pule essa etapa.
-Nunca vá direto para perguntas.
-
+Assim que o cliente explicar o problema inicial, antes de qualquer nova pergunta, você DEVE sempre:
+- Demonstrar que compreendeu a situação.
+- Informar que o escritório é especialista.
+Exemplo: "Entendi, imagino o transtorno que isso causou. Nós somos especialistas em resolver situações como essa e vamos te ajudar."
+Nunca vá direto para perguntas sem antes dizer isso (mas diga apenas uma vez na conversa).
 
 CLASSIFICAÇÃO DO CASO (OBRIGATÓRIO):
 
@@ -888,69 +896,36 @@ CLASSIFICAÇÃO DO CASO (OBRIGATÓRIO):
 Sempre perguntar quantas horas de atraso o cliente enfrentou.
 
 Se o cliente mencionar atraso superior a 4 horas, cancelamento ou overbooking:
-
 Após validar o problema, informe de forma simples:
-
 "Atrasos superiores a 4 horas geralmente já são considerados fora do razoável e podem indicar falha na prestação do serviço."
 
 Em seguida pergunte:
-
 1. A companhia aérea forneceu alimentação ou algum tipo de assistência?
 
-Se NÃO:
-
-Pergunte:
-
-"Você guardou notas fiscais ou recibos do que precisou gastar durante o atraso?"
-
-Solicite também:
-
-- Cartão de embarque
-- Ticket da passagem
-- E-mails ou mensagens informando o atraso
-
 Se houver:
-
 - Bagagem danificada
 - Bagagem extraviada
 
-Pergunte se foi feito o:
-
-RIB (Registro de Irregularidade de Bagagem)
-
-Se NÃO tiver sido feito:
-
-Informe que um advogado poderá orientar a registrar a reclamação no consumidor.gov.br.
-
 #### 🏥 CASO PLANO DE SAÚDE (AUMENTO)
-
 Se o cliente mencionar aumento no plano:
-
 Informe:
-
 "Entendi. Em muitos casos esse tipo de aumento pode ser revisto judicialmente."
 
 Além dos documentos básicos, solicite:
-
 - Histórico de boletos desde a contratação
-
 Explique que:
-
 - O plano pode fornecer extrato anual
 - Pode ser solicitado por telefone
 - Ou pelo aplicativo do próprio plano
 
-Assim que identificar claramente o tipo do caso, você DEVE chamar a tool
-"definirTipoCaso".
+Assim que identificar claramente o tipo do caso, você DEVE chamar a tool "definirTipoCaso".
 
 Exemplos:
 - Atraso, cancelamento ou overbooking de voo → tipoCaso = VOO
 - Bloqueio de conta ou problema bancário → BANCO
 - Negativa de plano ou tratamento → SAUDE
 
-Se o tipo ainda não estiver claro, NÃO chame a tool.
-Nunca invente.
-
+Se o tipo ainda não estiver claro, NÃO chame a tool. Nunca invente.
 
 REGRA ABSOLUTA DE TOOLS:
 - O nome da tool é EXATAMENTE: "registrarFatos"
@@ -967,10 +942,9 @@ REGRA ABSOLUTA DE TOOLS:
 - NÃO reexplique o caso.
 - NÃO faça resumo longo.
 - NÃO repita empresa, data ou dinâmica do dano.
-- Use no máximo **UMA frase curta** de confirmação
-  (ex: "Perfeito, já registrei tudo aqui.").
+- Use no máximo **UMA frase curta** de confirmação (ex: "Perfeito, já registrei tudo aqui.").
 
-  ## 4. COLETA_DOCS_EXTRA
+## 4. COLETA_DOCS_EXTRA
 - Você NÃO analisa arquivos
 - Você NÃO valida documentos
 - Você NÃO decide se algo é suficiente
@@ -984,37 +958,28 @@ REGRA ABSOLUTA DE TOOLS:
 3. Liste apenas os documentos necessários agora:
    ${context.documentosFaltantes.join(', ')}.
 
-  
-  **IMPORTANTE - PROCESSAMENTO DE ARQUIVOS:**
+**IMPORTANTE - PROCESSAMENTO DE ARQUIVOS:**
 - Você NÃO analisa arquivos nem imagens.
 - O sistema avisará quando um documento for validado.
 - Seu papel é apenas pedir o próximo documento quando instruído.
-  - Após confirmar, PEÇA O PRÓXIMO DOCUMENTO: "${proximoDocumento}".
+- Após confirmar, PEÇA O PRÓXIMO DOCUMENTO: "${proximoDocumento}".
 
 ---
 
 ##5. PRÉ-ENCAMINHAMENTO JURÍDICO 
 
 Após o cliente digitar FINALIZAR:
-
 Objetivo: Preparar emocionalmente para assinatura.
 
 Mensagem modelo:
-
-"Perfeito 
-Já organizei todas as informações para análise da equipe jurídica.
-
+"Perfeito. Já organizei todas as informações para análise da equipe jurídica.
 O próximo passo é apenas formalizar sua autorização para que possamos iniciar a avaliação do seu caso com segurança.
-
-Vou te enviar um documento digital simples para assinatura.
-Ele serve apenas para:
-
+Vou te enviar um documento digital simples para assinatura. Ele serve apenas para:
 • Autorizar a análise do seu caso
 • Garantir a proteção dos seus dados
 • Permitir o início da avaliação jurídica
 
 Essa assinatura não representa contratação imediata e não gera compromisso neste momento.
-
 Assim que assinado, nossa equipe já inicia a avaliação."
 
 # LIMITES ÉTICOS E TÉCNICOS (INVIOLÁVEIS)
@@ -1029,7 +994,7 @@ Assim que assinado, nossa equipe já inicia a avaliação."
 - Se o usuário estiver irritado, mantenha a calma e seja solícita.
 
 REGRAS DE SEGURANÇA:
-- Se "Fatos Coletados" já tiver 3 itens preenchidos, NÃO faça mais perguntas sobre o ocorrido. Peça os documentos.
+- Se os quatro pilares estiverem completos, encerre naturalmente a coleta e chame a tool.
 - Se o cliente disser apenas "Certo" ou "Ok" após você pedir documentos, apenas reforce o pedido ou aguarde o upload.
 
 Agora, responda à última mensagem do cliente seguindo estas diretrizes.
@@ -1065,7 +1030,7 @@ Agora, responda à última mensagem do cliente seguindo estas diretrizes.
     });
 
     const { text } = await generateText({
-      model: groq('llama-3.3-70b-versatile'),
+      model: openai('gpt-4o-mini'),
       temperature: 0.3, // Temperatura baixa para ser obediente
       system,
       prompt: mensagemInstrucao, // Envia a instrução forte em vez do JSON simples
@@ -1079,6 +1044,7 @@ Agora, responda à última mensagem do cliente seguindo estas diretrizes.
         .replace(/<tool_code>[\s\S]*?<\/tool_code>/g, '')
         .trim();
     }
+
 
     return textoLimpo;
   }
@@ -1138,13 +1104,13 @@ Agora, responda à última mensagem do cliente seguindo estas diretrizes.
       tituloAlert = 'Documentos Assinados!';
       mensagem = 'Ótima notícia! O cliente concluiu a assinatura dos documentos com sucesso.';
       corDestaque = '#10b981'; // Verde Emerald
-    } 
+    }
     else if (tipo === 'AJUDA') {
       subject = '🚨 Cliente precisa de suporte: ' + (conversation.customerName || 'Cliente');
       tituloAlert = 'Solicitação de Ajuda';
       mensagem = 'O cliente travou na etapa do robô e solicitou intervenção humana para continuar.';
       corDestaque = '#ef4444'; // Vermelho Danger
-    } 
+    }
     else if (tipo === 'PRIMEIRO_CONTATO') {
       subject = '👋 Novo Lead no WhatsApp: ' + (conversation.customerName || 'Cliente');
       tituloAlert = 'Novo Contato Iniciado';
@@ -1156,7 +1122,7 @@ Agora, responda à última mensagem do cliente seguindo estas diretrizes.
     const nomeCliente = conversation.customerName || 'Não identificado';
     const telefoneCliente = conversation.customerPhone || 'Sem telefone';
     // Se você tiver a URL do sistema no .env, pode colocar aqui. Ex: process.env.FRONTEND_URL
-    const linkSistema = `https://gestor-juridico-front.vercel.app`; 
+    const linkSistema = `https://gestor-juridico-front.vercel.app`;
 
     // O Template HTML com Design Moderno
     const html = `
@@ -1240,109 +1206,169 @@ Agora, responda à última mensagem do cliente seguindo estas diretrizes.
 
 
 
-private async handleRetornoCliente(texto: string, conversation: any) {
+  private async handleRetornoCliente(texto: string, conversation: any) {
 
-  const nome = conversation.customerName ?? 'tudo bem';
+    const nome = conversation.customerName ?? 'tudo bem';
 
-  // ====================================
-  // ETAPA 1 - PRIMEIRA MENSAGEM
-  // ====================================
-  if (!conversation.returnFlow) {
+    // ====================================
+    // ETAPA 1 - PRIMEIRA MENSAGEM
+    // ====================================
+    if (!conversation.returnFlow) {
 
-    await prisma.conversation.update({
-      where: { customerPhone: conversation.customerPhone },
-      data: { returnFlow: 'AGUARDANDO_ESCOLHA' }
-    });
+      await prisma.conversation.update({
+        where: { customerPhone: conversation.customerPhone },
+        data: { returnFlow: 'AGUARDANDO_ESCOLHA' }
+      });
 
-    return `${getSaudacaoAtual()}, ${nome} 😊
+      return `${getSaudacaoAtual()}, ${nome} 😊
 
 Seu atendimento anterior já foi finalizado.
 
 Como posso te ajudar agora?
 
 Você quer acompanhar um processo ou iniciar um novo atendimento?`;
-  }
-
-  // ====================================
-  // ETAPA 2 - INTENÇÃO
-  // ====================================
-  if (conversation.returnFlow === 'AGUARDANDO_ESCOLHA') {
-
-    const t = texto.toLowerCase();
-
-    if (t.includes('processo')) {
-      await prisma.conversation.update({
-        where: { customerPhone: conversation.customerPhone },
-        data: { returnFlow: 'AGUARDANDO_CPF' }
-      });
-
-      return `Perfeito 👍  
-Para localizar seus processos, me informe seu CPF.`;
     }
 
-    if (
-      t.includes('novo') ||
-      t.includes('atendimento') ||
-      t.includes('abrir')
-    ) {
+    // ====================================
+    // ETAPA 2 - INTENÇÃO
+    // ====================================
+    if (conversation.returnFlow === 'AGUARDANDO_ESCOLHA') {
 
-      await prisma.conversation.update({
-        where: { customerPhone: conversation.customerPhone },
-        data: {
-          workflowStep: 'COLETA_FATOS',
-          returnFlow: null,
-          returnData: {}
-        }
-      });
+      const t = texto.toLowerCase();
 
-      return `Claro 😊  
+      if (t.includes('processo')) {
+        await prisma.conversation.update({
+          where: { customerPhone: conversation.customerPhone },
+          data: { returnFlow: 'AGUARDANDO_CPF' }
+        });
+
+        return `Perfeito 👍  
+Para localizar seus processos, me informe seu CPF.`;
+      }
+
+      if (
+        t.includes('novo') ||
+        t.includes('atendimento') ||
+        t.includes('abrir')
+      ) {
+
+        await prisma.conversation.update({
+          where: { customerPhone: conversation.customerPhone },
+          data: {
+            workflowStep: 'COLETA_FATOS',
+            returnFlow: null,
+            returnData: {}
+          }
+        });
+
+        return `Claro 😊  
 Vamos iniciar um novo atendimento.
 
 Pode me contar o que aconteceu?`;
-    }
-
-    return `Você gostaria de acompanhar um processo ou iniciar um novo atendimento?`;
-  }
-
-  // ====================================
-  // ETAPA 3 - RECEBER CPF
-  // ====================================
-  if (conversation.returnFlow === 'AGUARDANDO_CPF') {
-
-    const cpfLimpo = texto.replace(/\D/g, '');
-
-    if (cpfLimpo.length !== 11) {
-      return 'Pode me informar um CPF válido?';
-    }
-
-    // 2. Transforma "05682018508" de volta em "056.820.185-08"
-    const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
-
-    // 3. Busca no banco aceitando os dois formatos
-    const processos = await prisma.processo.findMany({
-      where: {
-        OR: [
-          { clienteCpf: cpfFormatado }, // Tenta achar com pontuação (Padrão atual do seu banco)
-          { clienteCpf: cpfLimpo }      // Tenta achar sem pontuação (Caso tenha algum salvo assim)
-        ],
-        userId: conversation.userId,
-        arquivado: false
-      },
-      include: {
-        andamentos: {
-          orderBy: { createdAt: 'desc' },
-          take: 3
-        }
       }
-    });
 
-    if (!processos.length) {
-      return 'Não encontrei processos vinculados a esse CPF.';
+      return `Você gostaria de acompanhar um processo ou iniciar um novo atendimento?`;
     }
 
-    // 👉 1 processo → responde direto
-    if (processos.length === 1) {
+    // ====================================
+    // ETAPA 3 - RECEBER CPF
+    // ====================================
+    if (conversation.returnFlow === 'AGUARDANDO_CPF') {
 
+      const cpfLimpo = texto.replace(/\D/g, '');
+
+      if (cpfLimpo.length !== 11) {
+        return 'Pode me informar um CPF válido?';
+      }
+
+      // 2. Transforma "05682018508" de volta em "056.820.185-08"
+      const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+
+      // 3. Busca no banco aceitando os dois formatos
+      const processos = await prisma.processo.findMany({
+        where: {
+          OR: [
+            { clienteCpf: cpfFormatado }, // Tenta achar com pontuação (Padrão atual do seu banco)
+            { clienteCpf: cpfLimpo }      // Tenta achar sem pontuação (Caso tenha algum salvo assim)
+          ],
+          userId: conversation.userId,
+          arquivado: false
+        },
+        include: {
+          andamentos: {
+            orderBy: { createdAt: 'desc' },
+            take: 3
+          }
+        }
+      });
+
+      if (!processos.length) {
+        return 'Não encontrei processos vinculados a esse CPF.';
+      }
+
+      // 👉 1 processo → responde direto
+      if (processos.length === 1) {
+
+        await prisma.conversation.update({
+          where: { customerPhone: conversation.customerPhone },
+          data: {
+            returnFlow: null,
+            returnData: {}
+          }
+        });
+
+        return this.formatarAndamentos(processos);
+      }
+
+      // 👉 vários processos → pedir escolha
+      await prisma.conversation.update({
+        where: { customerPhone: conversation.customerPhone },
+        data: {
+          returnFlow: 'ESCOLHENDO_PROCESSO',
+          returnData: {
+            processos: processos.map(p => ({
+              id: p.id,
+              numero: p.numeroProcesso ?? p.numeroInterno
+            }))
+          }
+        }
+      });
+
+      return this.montarListaProcessos(processos);
+    }
+
+    // ====================================
+    // ETAPA 4 - ESCOLHA DO PROCESSO
+    // ====================================
+    if (conversation.returnFlow === 'ESCOLHENDO_PROCESSO') {
+
+      const escolha = parseInt(texto.replace(/\D/g, ''));
+      const lista = conversation.returnData?.processos;
+
+      if (!lista || !escolha || escolha < 1 || escolha > lista.length) {
+        return 'Pode me dizer qual processo deseja ver? (ex: 1)';
+      }
+
+      const escolhido = lista[escolha - 1];
+
+      const processo = await prisma.processo.findFirst({
+        where: {
+          id: escolhido.id,
+          userId: conversation.userId
+        },
+        include: {
+          andamentos: {
+            orderBy: { dataMovimento: 'desc' }, // 👈 MUDANÇA AQUI: Ordenar pela data real do tribunal
+            take: 5
+          }
+        }
+      });
+
+      if (!processo) {
+        return 'Ops, não encontrei os detalhes desse processo. Tente consultar novamente.';
+      }
+
+      // Limpa o estado da conversa para o bot voltar ao normal na próxima mensagem
       await prisma.conversation.update({
         where: { customerPhone: conversation.customerPhone },
         data: {
@@ -1351,148 +1377,88 @@ Pode me contar o que aconteceu?`;
         }
       });
 
-      return this.formatarAndamentos(processos);
+      // Passamos apenas O processo escolhido para formatar
+      return this.formatarAndamentosProcesso(processo);
     }
 
-    // 👉 vários processos → pedir escolha
-    await prisma.conversation.update({
-      where: { customerPhone: conversation.customerPhone },
-      data: {
-        returnFlow: 'ESCOLHENDO_PROCESSO',
-        returnData: {
-          processos: processos.map(p => ({
-            id: p.id,
-            numero: p.numeroProcesso ?? p.numeroInterno
-          }))
-        }
-      }
-    });
-
-    return this.montarListaProcessos(processos);
+    return null;
   }
 
-  // ====================================
-  // ETAPA 4 - ESCOLHA DO PROCESSO
-  // ====================================
-  if (conversation.returnFlow === 'ESCOLHENDO_PROCESSO') {
 
-    const escolha = parseInt(texto.replace(/\D/g, ''));
-    const lista = conversation.returnData?.processos;
+  private montarListaProcessos(processos: any[]) {
 
-    if (!lista || !escolha || escolha < 1 || escolha > lista.length) {
-      return 'Pode me dizer qual processo deseja ver? (ex: 1)';
-    }
+    let msg = `Encontrei mais de um processo seu 😊\n\n`;
+    msg += `Qual deles você deseja acompanhar?\n\n`;
 
-    const escolhido = lista[escolha - 1];
-
-    const processo = await prisma.processo.findFirst({
-      where: {
-        id: escolhido.id,
-        userId: conversation.userId
-      },
-      include: {
-        andamentos: {
-          orderBy: { dataMovimento: 'desc' }, // 👈 MUDANÇA AQUI: Ordenar pela data real do tribunal
-          take: 5
-        }
-      }
+    processos.forEach((p, i) => {
+      msg += `${i + 1}️⃣ Processo ${p.numeroProcesso ?? p.numeroInterno}\n`;
     });
 
-    if (!processo) {
-      return 'Ops, não encontrei os detalhes desse processo. Tente consultar novamente.';
-    }
+    msg += `\nPode me dizer o número.`;
 
-    // Limpa o estado da conversa para o bot voltar ao normal na próxima mensagem
-    await prisma.conversation.update({
-      where: { customerPhone: conversation.customerPhone },
-      data: {
-        returnFlow: null,
-        returnData: {}
-      }
-    });
-
-    // Passamos apenas O processo escolhido para formatar
-    return this.formatarAndamentosProcesso(processo);
-  }
-
-  return null;
-}
-
-
-private montarListaProcessos(processos: any[]) {
-
-  let msg = `Encontrei mais de um processo seu 😊\n\n`;
-  msg += `Qual deles você deseja acompanhar?\n\n`;
-
-  processos.forEach((p, i) => {
-    msg += `${i + 1}️⃣ Processo ${p.numeroProcesso ?? p.numeroInterno}\n`;
-  });
-
-  msg += `\nPode me dizer o número.`;
-
-  return msg;
-}
-
-
-private formatarAndamentos(processos: any[]) {
-
-  let resposta = `Encontrei atualizações do seu processo 👇\n\n`;
-
-  processos.forEach(p => {
-
-    resposta += `📁 ${p.descricaoObjeto}\n`;
-
-    if (!p.andamentos.length) {
-      resposta += `Sem movimentações recentes.\n\n`;
-      return;
-    }
-
-    p.andamentos.forEach((a: any) => {
-      resposta += `• ${a.titulo}\n`;
-      resposta += `${a.descricao}\n\n`;
-    });
-  });
-
-  return resposta.trim();
-}
-
-private formatarAndamentosProcesso(processo: any) {
-  const numProcesso = processo.numeroProcesso ?? processo.numeroInterno;
-  
-  let msg = `📄 *Processo:* ${numProcesso}\n\n`;
-
-  // Se não tiver nenhum andamento cadastrado
-  if (!processo.andamentos || processo.andamentos.length === 0) {
-    msg += `Ainda não temos movimentações registradas para este processo.\n`;
-    msg += `Fique tranquilo, assim que houver novidades, nós avisaremos!`;
     return msg;
   }
 
-  msg += `*Últimas movimentações:*\n\n`;
 
-  // Percorre os até 5 andamentos que vieram do banco
-  processo.andamentos.forEach((and: any) => {
-    // Usa dataMovimento do CNJ (se for nulo, usa a data de criação no banco)
-    const dataRaw = and.dataMovimento || and.createdAt;
-    
-    // Formata para DD/MM/YYYY
-    const dataFormatada = new Intl.DateTimeFormat('pt-BR').format(new Date(dataRaw));
+  private formatarAndamentos(processos: any[]) {
 
-    msg += `📅 *${dataFormatada}*\n`;
-    msg += `🔹 *${and.titulo}*\n`;
-    
-    // Adiciona a descrição (resumo da IA ou original) se ela for diferente do título
-    if (and.descricao && and.descricao !== and.titulo) {
-      msg += `_${and.descricao}_\n`;
+    let resposta = `Encontrei atualizações do seu processo 👇\n\n`;
+
+    processos.forEach(p => {
+
+      resposta += `📁 ${p.descricaoObjeto}\n`;
+
+      if (!p.andamentos.length) {
+        resposta += `Sem movimentações recentes.\n\n`;
+        return;
+      }
+
+      p.andamentos.forEach((a: any) => {
+        resposta += `• ${a.titulo}\n`;
+        resposta += `${a.descricao}\n\n`;
+      });
+    });
+
+    return resposta.trim();
+  }
+
+  private formatarAndamentosProcesso(processo: any) {
+    const numProcesso = processo.numeroProcesso ?? processo.numeroInterno;
+
+    let msg = `📄 *Processo:* ${numProcesso}\n\n`;
+
+    // Se não tiver nenhum andamento cadastrado
+    if (!processo.andamentos || processo.andamentos.length === 0) {
+      msg += `Ainda não temos movimentações registradas para este processo.\n`;
+      msg += `Fique tranquilo, assim que houver novidades, nós avisaremos!`;
+      return msg;
     }
-    
-    msg += `\n`; // Espaço entre um andamento e outro
-  });
 
-  return msg;
-}
+    msg += `*Últimas movimentações:*\n\n`;
+
+    // Percorre os até 5 andamentos que vieram do banco
+    processo.andamentos.forEach((and: any) => {
+      // Usa dataMovimento do CNJ (se for nulo, usa a data de criação no banco)
+      const dataRaw = and.dataMovimento || and.createdAt;
+
+      // Formata para DD/MM/YYYY
+      const dataFormatada = new Intl.DateTimeFormat('pt-BR').format(new Date(dataRaw));
+
+      msg += `📅 *${dataFormatada}*\n`;
+      msg += `🔹 *${and.titulo}*\n`;
+
+      // Adiciona a descrição (resumo da IA ou original) se ela for diferente do título
+      if (and.descricao && and.descricao !== and.titulo) {
+        msg += `_${and.descricao}_\n`;
+      }
+
+      msg += `\n`; // Espaço entre um andamento e outro
+    });
+
+    return msg;
+  }
 
 
 
-  
+
 }
