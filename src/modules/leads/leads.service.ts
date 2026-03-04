@@ -39,7 +39,7 @@ export class LeadsService {
         dataOcorrido: tempData.data_do_ocorrido || tempData.dataOcorrido || '', 
         dinamicaDoDano: tempData.dinamica_do_dano || tempData.dinamicaDoDano || '',
         prejuizo: tempData.prejuizo || '',
-        
+        qualificacaoLead: conv.qualificacaoLead || '',
         workflowStep: conv.workflowStep,
         aguardandoDocumentos: !!tempData.aguardandoDocumentos, 
 

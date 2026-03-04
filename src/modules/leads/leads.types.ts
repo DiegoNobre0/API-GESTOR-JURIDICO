@@ -27,7 +27,7 @@ export interface LeadJuridico {
 
   workflowStep: string;
   aguardandoDocumentos: boolean;
-
+  qualificacaoLead: string;
   documentosEssenciais: DocumentoView[];
   documentosComplementares: DocumentoView[];
 }
