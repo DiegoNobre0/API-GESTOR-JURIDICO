@@ -35,7 +35,7 @@ type WorkflowStep =
   | 'ASSINATURA'
   | 'FINALIZADO';
 
-type TipoCaso = 'VOO_ONIBUS' | 'BANCO' | 'SAUDE' | 'GERAL' | 'BPC' | 'INSS' | 'GOV';
+type TipoCaso = 'VOO_ONIBUS' | 'BANCO' | 'SAUDE' | 'TRABALHO' | 'GERAL' | 'BPC' | 'INSS' | 'GOV';
 type TemperaturaLead = 'QUENTE' | 'MORNO' | 'FRIO';
 
 
@@ -48,6 +48,7 @@ const tipoCasoEnum = z.enum([
   'VOO_ONIBUS',
   'BANCO',
   'SAUDE',
+  'TRABALHO',
   'GERAL',
   'BPC',
   'INSS',
@@ -159,7 +160,7 @@ async function classificarTipoCasoPorFatos(fatos: {
       model: openai('gpt-4o-mini'),
       temperature: 0,
       schema: z.object({
-        tipoCaso: z.enum(['VOO_ONIBUS', 'BANCO', 'SAUDE', 'BPC', 'INSS', 'GOV', 'GERAL']),
+        tipoCaso: z.enum(['VOO_ONIBUS', 'BANCO', 'SAUDE', 'TRABALHO','BPC', 'INSS', 'GOV', 'GERAL']),
         qualificacaoLead: z.enum(['QUENTE', 'MORNO', 'FRIO'])
       }),
       system: `
@@ -170,6 +171,7 @@ REGRAS DE CLASSIFICAÇÃO PARA "tipoCaso" (Escolha APENAS UMA):
 - VOO_ONIBUS: Atraso, cancelamento, overbooking, bagagem
 - BANCO: Conta bloqueada, banco, cartão, Pix, fraudes financeiras
 - SAUDE: Plano de saúde, tratamento, negativa, aumento abusivo
+- TRABALHO: Rescisão indireta, problemas no emprego, assédio, FGTS, horas extras, carteira não assinada
 - BPC: Benefício assistencial, deficiência, baixa renda (LOAS)
 - INSS: Aposentadoria, auxílio doença, pensão
 - GOV: GOV.BR, serviços públicos digitais
@@ -238,39 +240,41 @@ const DOCUMENTOS_BASE: DocumentoChecklist[] = [
 
 const CHECKLISTS: Record<TipoCaso, DocumentoChecklist[]> = {
   VOO_ONIBUS: [
-    { codigo: 'PASSAGEM', descricao: 'Passagens aéreas' },
-    { codigo: 'ATRASO', descricao: 'Comprovante do atraso/cancelamento' },
-    { codigo: 'GASTOS', descricao: 'Gastos extras' },
-    { codigo: 'RIB', descricao: 'RIB - Registro de incidente da bagagem' },
-    { codigo: 'OBS1', descricao: 'Qualquer tipo de documento adicional que você julgar importante' },
-    { codigo: 'OBS', descricao: 'Caso você ainda não tenha feito uma reclamação, será necessário registrar no site *consumidor.gov.br* contra a companhia aérea. Se tiver dúvidas, nosso atendimento irá te orientar.' },
+    { codigo: 'PASSAGEM', descricao: 'Passagens originais e as novas (se houver)' },
+    { codigo: 'ATRASO', descricao: 'Comprovante do atraso ou cancelamento' },
+    { codigo: 'GASTOS', descricao: 'Comprovantes de gastos extras (alimentação, hotel, etc)' },
+    { codigo: 'RIB', descricao: 'RIB (Registro de Incidente de Bagagem) - Se for extravio/dano' },
+    { codigo: 'OBS', descricao: 'Se ainda não fez reclamação, registre no *consumidor.gov.br* e nos envie o print.' },
   ],
   BANCO: [
-    { codigo: 'EXTRATO', descricao: 'Extratos bancários' },
-    { codigo: 'BLOQUEIO', descricao: 'Print da mensagem do banco ou do chat avisando do bloqueio. Se ainda não tiver, entre em contato com o banco, tire um print e nos envie.' },
+    { codigo: 'EXTRATO', descricao: 'Extratos bancários detalhados' },
+    { codigo: 'BLOQUEIO', descricao: 'Print da mensagem do banco ou chat avisando do bloqueio/fraude. Se não tiver, tire um print do contato com o banco.' },
   ],
   SAUDE: [
-    { codigo: 'RG', descricao: 'RG ou CNH' },
-    { codigo: 'COMP_RES', descricao: 'Comprovante de residência' },
-    { codigo: 'CARTEIRINHA', descricao: 'Carteirinha do plano de saúde' },
-    { codigo: 'PROVAS_EXTRAS', descricao: 'Outras provas que julgar importante' },
-    { codigo: 'CASO_NEGATIVA', descricao: 'SE FOR NEGATIVA DE COBERTURA: Envie o print/foto da negativa, laudo e solicitações médicas do procedimento negado, e o comprovante de pagamento das 3 últimas mensalidades.', sensivel: true },
-    { codigo: 'CASO_REVISIONAL', descricao: 'SE FOR REVISIONAL (Aumento Abusivo): Envie o histórico de pagamentos de todo o tempo no plano (ex: 2020 a 2026). Caso não tenha, ligue para o plano, solicite e anote o número do protocolo.' },
+    // RG e Comprovante de Residência já são pedidos no DOCUMENTOS_BASE
+    { codigo: 'CARTEIRINHA', descricao: 'Carteirinha do plano de saúde (física ou digital)' },
+    { codigo: 'CONTRATO', descricao: 'Contrato ou proposta de adesão ao plano (se tiver acesso)' },
+    { codigo: 'CASO_NEGATIVA', descricao: '👉 SE FOR NEGATIVA: Print/e-mail ou ofício da recusa, Laudo médico com CID justificando a necessidade, e Exames/pedidos médicos.', sensivel: true },
+    { codigo: 'CASO_REVISIONAL', descricao: '👉 SE FOR AUMENTO ABUSIVO: Histórico completo de pagamentos mensais desde o início do contrato (boletos, faturas ou extrato do app).' },
+  ],
+  TRABALHO: [
+    { codigo: 'CTPS_DIGITAL', descricao: 'Print/foto da Carteira de Trabalho Digital (mostrando os vínculos)' },
+    { codigo: 'EXTRATO_FGTS', descricao: 'Extrato do FGTS tirado do aplicativo oficial (para vermos se a empresa está depositando)' },
+    { codigo: 'PROVAS_TRABALHO', descricao: 'Provas do que aconteceu (prints de WhatsApp, e-mails, recibos, fotos de cartão de ponto ou lista de testemunhas)' },
   ],
   BPC: [
-    { codigo: 'RG', descricao: 'RG ou CNH' },
-    { codigo: 'CPF', descricao: 'CPF' },
-    { codigo: 'SENHA_GOV', descricao: 'Senha do portal GOV.BR (necessária para fazermos a análise de viabilidade)' },
-    { codigo: 'CADUNICO', descricao: 'Folha do CadÚnico' },
-    { codigo: 'LAUDO', descricao: 'Laudo médico', sensivel: true },
+    // RG e Comprovante de Residência já são pedidos no DOCUMENTOS_BASE    
+    { codigo: 'NIS', descricao: 'Cartão ou número do NIS (11 dígitos) e Folha do CadÚnico' },
+    { codigo: 'DOCS_FAMILIA', descricao: 'RG/CPF e comprovante de renda de TODOS os membros da família que moram na mesma casa' },
+    { codigo: 'SENHA_GOV', descricao: 'Acesso (Login e Senha) do portal Gov.br (para verificarmos o cadastro no INSS)' },
+    { codigo: 'CASO_DEFICIENTE', descricao: '👉 SE FOR POR DEFICIÊNCIA/DOENÇA: Laudo médico atualizado com CID, relatórios de especialistas e exames.', sensivel: true },
+    { codigo: 'CASO_IDOSO', descricao: '👉 SE FOR IDOSO (65+): Certidão de nascimento ou casamento e Carteira de Trabalho (CTPS).' },
   ],
-  INSS: [
-    { codigo: 'RG', descricao: 'RG ou CNH' },
-    { codigo: 'CPF', descricao: 'CPF' },
-    { codigo: 'SENHA_GOV', descricao: 'Senha do portal GOV.BR (necessária para fazermos a análise de viabilidade)' },
+  INSS: [    
+    { codigo: 'SENHA_GOV', descricao: 'Senha do portal GOV.BR (necessária para análise de viabilidade)' },
+    { codigo: 'CTPS', descricao: 'Carteira de Trabalho (CTPS)' },
   ],
   GOV: [
-    { codigo: 'RG', descricao: 'RG ou CNH' },
     { codigo: 'GOVBR', descricao: 'Print da conta GOV.BR ou dados de acesso' },
   ],
   GERAL: [
@@ -919,22 +923,63 @@ Assim que identificar claramente o tipo do caso, você DEVE chamar a tool "defin
 Atenção: Existem dois problemas principais nesta área. Diferencie-os pelo relato do cliente e siga estritamente o roteiro correspondente:
 
 1. SE FOR AUMENTO ABUSIVO NA MENSALIDADE (REVISIONAL):
-- Valide o problema com esta exata abordagem: "Entendi! Reajustes abusivos em planos de saúde infelizmente são muito comuns e, dependendo dos valores, podem representar uma violação às regras da ANS. A boa notícia é que existe amparo legal para questionar isso e até pedir a devolução dos valores pagos a mais."
-- Em seguida, colete estas 3 informações (PERGUNTE UMA POR VEZ):
-  a) Qual é o nome da operadora do plano? (ex: Unimed, Bradesco, Hapvida)
-  b) Há quanto tempo você possui esse plano (mês e ano aproximado)?
-  c) O plano é individual, familiar ou empresarial?
-- Quando for o momento de pedir documentos, explique: "Para analisarmos o abuso, precisaremos do histórico completo de pagamentos mensais desde o início do contrato. Você pode conseguir isso pelo app/site da operadora ou faturas guardadas."
+- Valide o problema: "Entendi! Reajustes abusivos em planos de saúde infelizmente são muito comuns e podem representar uma violação às regras da ANS. A boa notícia é que existe amparo legal para questionar isso e pedir a devolução dos valores pagos a mais."
+- Colete estas informações (UMA POR VEZ): a) Qual a operadora? b) Há quanto tempo possui o plano? c) É individual, familiar ou empresarial?
+- Explique: "Para analisarmos o abuso, precisaremos do histórico completo de pagamentos mensais desde o início do contrato."
 
 2. SE FOR NEGATIVA DE COBERTURA (TRATAMENTO, EXAME OU CIRURGIA):
-- Valide o problema mostrando urgência e empatia com a saúde do cliente.
-- Em seguida, colete estas informações (PERGUNTE UMA POR VEZ):
-  a) Qual é o nome da operadora do plano?
-  b) Qual foi o procedimento, tratamento ou cirurgia exata que foi negada?
-  c) Você já possui o laudo/solicitação médica e a recusa do plano por escrito?
-- Informe: "As negativas abusivas podem ser revertidas judicialmente, muitas vezes com pedidos de liminar para garantir o seu tratamento o mais rápido possível."
+- Valide mostrando extrema empatia e urgência: "Entendi. Infelizmente, a recusa de cobertura é grave, mas a Lei garante seus direitos. Negar tratamentos sem justificativa legal abre margem para ação judicial, muitas vezes com pedido de tutela de urgência (uma decisão rápida do juiz para obrigar o plano a liberar o procedimento)."
+- Colete estas informações (UMA POR VEZ): a) Qual a operadora? b) Qual o procedimento negado? c) A negativa foi por escrito ou verbal? d) É um caso urgente ou eletivo?
 
 Assim que identificar claramente o tipo do caso, você DEVE chamar a tool "definirTipoCaso" (use SAUDE).
+
+#### 👴 CASO BPC (LOAS)
+O BPC/LOAS é um benefício assistencial. O cliente pode buscar por dois motivos: Deficiência ou Idade (65+). Identifique o caso e siga o roteiro:
+
+1. SE FOR PESSOA COM DEFICIÊNCIA OU DOENÇA INCAPACITANTE:
+- Colete estas informações (UMA POR VEZ): a) Qual é a deficiência ou doença? b) Há quanto tempo convive com isso? c) Possui laudo médico?
+- Após coletar os dados clínicos, explique a regra de renda de forma simples: "Para ter direito ao BPC, a renda por pessoa da família precisa ser de até 1/4 do salário mínimo, e isso precisa estar atualizado no seu CadÚnico (NIS)."
+- Pergunte: Você possui NIS e o seu CadÚnico está atualizado? Qual a renda total da família que mora com você?
+
+2. SE FOR IDOSO (65 ANOS OU MAIS):
+- Colete estas informações (UMA POR VEZ): a) Qual a sua data de nascimento? b) Você recebe algum benefício do INSS atualmente (como aposentadoria ou pensão)?
+- Após isso, explique a regra de renda: "Para ter direito ao BPC, a renda por pessoa da família precisa ser de até 1/4 do salário mínimo, e isso precisa estar atualizado no seu CadÚnico (NIS)."
+- Pergunte: Você possui NIS e o seu CadÚnico está atualizado? Qual a renda total da família que mora com você?
+
+Assim que identificar claramente que se trata de BPC, você DEVE chamar a tool "definirTipoCaso" (use BPC).
+
+
+#### 🏦 CASO BANCÁRIO (FRAUDES OU EMPRÉSTIMO CONSIGNADO)
+Atenção: Diferencie se o problema é de fraude/bloqueio ou se é de juros abusivos em empréstimo consignado.
+
+1. SE FOR EMPRÉSTIMO CONSIGNADO OU RMC (JUROS ABUSIVOS):
+- Tom de voz: Extremamente acolhedor, simples e paciente (frequentemente são idosos). Use palavras gentis.
+- Valide o problema: "Entendi! Isso é muito comum e a boa notícia é que a gente pode te ajudar. Muitas vezes os bancos cobram juros acima do permitido e é possível entrar na justiça para reduzir as parcelas e recuperar o dinheiro."
+- Colete estas informações (UMA POR VEZ):
+  a) Esse desconto cai na sua aposentadoria/pensão do INSS, ou é descontado no seu salário de trabalho?
+  b) Você tem o contrato do empréstimo ou do cartão guardado? (Se o cliente disser que NÃO TEM, tranquilize-o na mesma hora dizendo: "Não se preocupe, isso é muito comum! O banco é obrigado por lei a te fornecer uma cópia e nosso advogado te ajudará com isso. Vamos seguir com o que você tiver.")
+
+2. SE FOR FRAUDE, GOLPE PIX OU CONTA BLOQUEADA:
+- Valide o problema com empatia e agilidade, pois o cliente estará nervoso.
+- Colete estas informações (UMA POR VEZ):
+  a) Qual é o banco envolvido?
+  b) Quando ocorreu o bloqueio ou a fraude e qual foi o valor do prejuízo?
+  c) Você já entrou em contato com o banco para contestar? Tem os números de protocolo?
+
+Assim que identificar claramente o problema (consignado ou fraude), você DEVE chamar a tool "definirTipoCaso" (use BANCO).
+
+#### 💼 CASO TRABALHISTA (RESCISÃO INDIRETA E PROBLEMAS NO EMPREGO)
+Se o cliente relatar problemas no emprego (como falta de carteira assinada, não pagamento de FGTS/horas extras, salário atrasado ou assédio moral/sexual):
+
+- Tom de voz: Acolhedor e protetor. 
+- Valide o problema: "Entendi. Sei que não é fácil passar por essa situação. Quando o empregador comete faltas graves, você tem o direito de sair do emprego e receber tudo como se tivesse sido demitido sem justa causa (Isso se chama Rescisão Indireta)."
+- Colete estas informações (UMA POR VEZ):
+  a) O que exatamente o empregador está fazendo de errado? (Peça para ele detalhar as faltas, ex: não assinou carteira, assédio, etc).
+  b) Há quanto tempo isso está acontecendo?
+  c) Você ainda está trabalhando nessa empresa hoje ou já saiu?
+- ⚠️ ALERTA OBRIGATÓRIO (Faça isso APÓS coletar os dados e antes de pedir documentos): "Aviso muito importante: NÃO PEÇA DEMISSÃO! Se você pedir demissão, pode perder direitos como o seguro-desemprego e a multa do FGTS. Nosso advogado vai te orientar sobre o momento certo de sair."
+
+Assim que identificar um caso trabalhista, você DEVE chamar a tool "definirTipoCaso" (use TRABALHO).
 
 Exemplos:
 - Atraso, cancelamento ou overbooking de voo → tipoCaso = VOO_ONIBUS
