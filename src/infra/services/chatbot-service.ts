@@ -35,7 +35,7 @@ type WorkflowStep =
   | 'ASSINATURA'
   | 'FINALIZADO';
 
-type TipoCaso = 'VOO' | 'BANCO' | 'SAUDE' | 'GERAL' | 'BPC' | 'INSS' | 'GOV';
+type TipoCaso = 'VOO_ONIBUS' | 'BANCO' | 'SAUDE' | 'GERAL' | 'BPC' | 'INSS' | 'GOV';
 type TemperaturaLead = 'QUENTE' | 'MORNO' | 'FRIO';
 
 
@@ -45,7 +45,7 @@ export interface ClassificacaoResult {
 }
 
 const tipoCasoEnum = z.enum([
-  'VOO',
+  'VOO_ONIBUS',
   'BANCO',
   'SAUDE',
   'GERAL',
@@ -159,7 +159,7 @@ async function classificarTipoCasoPorFatos(fatos: {
       model: openai('gpt-4o-mini'),
       temperature: 0,
       schema: z.object({
-        tipoCaso: z.enum(['VOO', 'BANCO', 'SAUDE', 'BPC', 'INSS', 'GOV', 'GERAL']),
+        tipoCaso: z.enum(['VOO_ONIBUS', 'BANCO', 'SAUDE', 'BPC', 'INSS', 'GOV', 'GERAL']),
         qualificacaoLead: z.enum(['QUENTE', 'MORNO', 'FRIO'])
       }),
       system: `
@@ -167,7 +167,7 @@ Você é um classificador jurídico sênior.
 Analise os fatos e retorne exclusivamente os campos definidos no schema.
 
 REGRAS DE CLASSIFICAÇÃO PARA "tipoCaso" (Escolha APENAS UMA):
-- VOO: Atraso, cancelamento, overbooking, bagagem
+- VOO_ONIBUS: Atraso, cancelamento, overbooking, bagagem
 - BANCO: Conta bloqueada, banco, cartão, Pix, fraudes financeiras
 - SAUDE: Plano de saúde, tratamento, negativa, aumento abusivo
 - BPC: Benefício assistencial, deficiência, baixa renda (LOAS)
@@ -237,7 +237,7 @@ const DOCUMENTOS_BASE: DocumentoChecklist[] = [
 ];
 
 const CHECKLISTS: Record<TipoCaso, DocumentoChecklist[]> = {
-  VOO: [
+  VOO_ONIBUS: [
     { codigo: 'PASSAGEM', descricao: 'Passagens aéreas' },
     { codigo: 'ATRASO', descricao: 'Comprovante do atraso/cancelamento' },
     { codigo: 'GASTOS', descricao: 'Gastos extras' },
@@ -285,9 +285,7 @@ const CHECKLISTS: Record<TipoCaso, DocumentoChecklist[]> = {
 export class ChatbotService {
   constructor() { }
 
-  async   chat(message: string, customerPhone: string) {
-
-    
+  async chat(message: string, customerPhone: string) {    
 
     let conversation = await prisma.conversation.findUnique({
       where: { customerPhone },
@@ -892,36 +890,54 @@ CLASSIFICAÇÃO DO CASO (OBRIGATÓRIO):
 
 ### CONDUTAS ESPECÍFICAS POR TIPO DE CASO
 
-#### ✈️ CASO VOO
-Sempre perguntar quantas horas de atraso o cliente enfrentou.
+#### ✈️ CASO VOO_ONIBUS (Transporte Aéreo e Terrestre)
+Atenção: Os problemas de voo são idênticos aos de ônibus.
+Diferencie os tipos de problema relatados pelo cliente e siga estritamente as regras abaixo:
 
-Se o cliente mencionar atraso superior a 4 horas, cancelamento ou overbooking:
-Após validar o problema, informe de forma simples:
-"Atrasos superiores a 4 horas geralmente já são considerados fora do razoável e podem indicar falha na prestação do serviço."
+1. SE FOR BAGAGEM EXTRAVIADA OU QUEBRADA (DANIFICADA):
+- Lembre-se: O extravio ou dano só é percebido quando o cliente chega ao destino (na esteira ou no bagageiro). Não confunda com atraso de viagem.
+- Ao identificar esse problema, pergunte de forma natural sobre a reclamação oficial:
+  "Você chegou a abrir alguma reclamação no balcão da empresa quando percebeu que a sua mala estava com problema? Geralmente isso gera um protocolo chamado RIB (Registro de Incidente de Bagagem)."
+- Se o cliente disser que NÃO TEM o RIB, responda de forma acolhedora:
+  "Não tem problema! A alternativa é você entrar no site consumidor.gov.br e fazer uma reclamação contra a empresa por lá. Assim que finalizar, você tira um print da reclamação e manda pra gente, pois vai servir como se fosse o RIB, combinado?"
 
-Em seguida pergunte:
-1. A companhia aérea forneceu alimentação ou algum tipo de assistência?
+2. SE FOR ATRASO NA VIAGEM:
+- Pergunte quantas horas de atraso o cliente enfrentou.
+- Se o cliente mencionar atraso superior a 3 ou 4 horas, valide o problema:
+  "Atrasos superiores a esse tempo já são considerados fora do razoável e podem indicar falha na prestação do serviço."
+- Pergunte se a companhia forneceu alimentação ou algum tipo de assistência.
+- Informe que o cliente precisará comprovar o atraso (pode ser pelo aviso no app, um informativo impresso entregue pela empresa, etc.).
 
-Se houver:
-- Bagagem danificada
-- Bagagem extraviada
+3. SE FOR CANCELAMENTO DE VIAGEM:
+- Siga a mesma linha de empatia do atraso.
+- Informe ao cliente que ele precisa comprovar o cancelamento.
+- Diga: "Se a empresa gerou uma nova passagem para você, fica fácil. Basta pegar as passagens originais e as novas que foram geradas devido ao cancelamento e nos enviar. Ou, se você fez alguma reclamação no balcão, pode nos mandar uma foto ou o número do protocolo."
 
-#### 🏥 CASO PLANO DE SAÚDE (AUMENTO)
-Se o cliente mencionar aumento no plano:
-Informe:
-"Entendi. Em muitos casos esse tipo de aumento pode ser revisto judicialmente."
+Assim que identificar claramente o tipo do caso, você DEVE chamar a tool "definirTipoCaso" (use VOO_ONIBUS).
 
-Além dos documentos básicos, solicite:
-- Histórico de boletos desde a contratação
-Explique que:
-- O plano pode fornecer extrato anual
-- Pode ser solicitado por telefone
-- Ou pelo aplicativo do próprio plano
+#### 🏥 CASO PLANO DE SAÚDE
+Atenção: Existem dois problemas principais nesta área. Diferencie-os pelo relato do cliente e siga estritamente o roteiro correspondente:
 
-Assim que identificar claramente o tipo do caso, você DEVE chamar a tool "definirTipoCaso".
+1. SE FOR AUMENTO ABUSIVO NA MENSALIDADE (REVISIONAL):
+- Valide o problema com esta exata abordagem: "Entendi! Reajustes abusivos em planos de saúde infelizmente são muito comuns e, dependendo dos valores, podem representar uma violação às regras da ANS. A boa notícia é que existe amparo legal para questionar isso e até pedir a devolução dos valores pagos a mais."
+- Em seguida, colete estas 3 informações (PERGUNTE UMA POR VEZ):
+  a) Qual é o nome da operadora do plano? (ex: Unimed, Bradesco, Hapvida)
+  b) Há quanto tempo você possui esse plano (mês e ano aproximado)?
+  c) O plano é individual, familiar ou empresarial?
+- Quando for o momento de pedir documentos, explique: "Para analisarmos o abuso, precisaremos do histórico completo de pagamentos mensais desde o início do contrato. Você pode conseguir isso pelo app/site da operadora ou faturas guardadas."
+
+2. SE FOR NEGATIVA DE COBERTURA (TRATAMENTO, EXAME OU CIRURGIA):
+- Valide o problema mostrando urgência e empatia com a saúde do cliente.
+- Em seguida, colete estas informações (PERGUNTE UMA POR VEZ):
+  a) Qual é o nome da operadora do plano?
+  b) Qual foi o procedimento, tratamento ou cirurgia exata que foi negada?
+  c) Você já possui o laudo/solicitação médica e a recusa do plano por escrito?
+- Informe: "As negativas abusivas podem ser revertidas judicialmente, muitas vezes com pedidos de liminar para garantir o seu tratamento o mais rápido possível."
+
+Assim que identificar claramente o tipo do caso, você DEVE chamar a tool "definirTipoCaso" (use SAUDE).
 
 Exemplos:
-- Atraso, cancelamento ou overbooking de voo → tipoCaso = VOO
+- Atraso, cancelamento ou overbooking de voo → tipoCaso = VOO_ONIBUS
 - Bloqueio de conta ou problema bancário → BANCO
 - Negativa de plano ou tratamento → SAUDE
 
