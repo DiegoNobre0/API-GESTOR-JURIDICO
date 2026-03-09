@@ -19,9 +19,9 @@ export async function verificarFallbacks() {
 
   for (const c of conversas) {
 
-    if (!c.lastCustomerMessageAt) continue
+    if (!c.lastMessageTime) continue
 
-    const diffMin = (agora.getTime() - new Date(c.lastCustomerMessageAt).getTime()) / 60000
+    const diffMin = (agora.getTime() - new Date(c.lastMessageTime).getTime()) / 60000
     const diffHoras = diffMin / 60
 
     // 🔒 NUNCA enviar fora da janela gratuita do WhatsApp

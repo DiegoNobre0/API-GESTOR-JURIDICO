@@ -29,7 +29,7 @@ export const createProcessoSchema = z.object({
     z.string().optional().nullable()
   ),
 
-  responsavel: z.enum(['Leonardo', 'Alberto', 'Jenifer']),
+  responsavel: z.string(),
   tipoHonorarios: z.enum(['Iniciais', 'Êxito', 'Ambos']),
   valorPrevistoIniciais: z.number().default(0),
   valorPrevistoExito: z.number().default(0),

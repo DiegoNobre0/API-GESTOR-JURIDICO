@@ -594,10 +594,10 @@ Assim que finalizar, me avise por aqui.
         .trim();     
     }
 
-    if (toolCalls.some(t => t.toolName === 'registrarFatos')) {
-      textoResposta = "Entendi perfeitamente a situação. Vou organizar essas informações para a nossa equipe jurídica.";
-      console.log('✅ [TOOL CALL DETECTADA] Tool registrarFatos foi acionada com sucesso.');
-    }
+    // if (toolCalls.some(t => t.toolName === 'registrarFatos')) {
+    //   textoResposta = "Entendi perfeitamente a situação. Vou organizar essas informações para a nossa equipe jurídica.";
+    //   console.log('✅ [TOOL CALL DETECTADA] Tool registrarFatos foi acionada com sucesso.');
+    // }
 
     console.log('[DEBUG] IA FALA:', textoResposta);
 
