@@ -85,7 +85,7 @@ const atualizarEtapaTool = tool<{}, void>({
 const registrarFatosSchema = z.object({
   dinamica_do_dano: z
     .string()
-    .min(25, 'Descreva o ocorrido com mais detalhes')
+    .min(5, 'Descreva o ocorrido com mais detalhes')
     .describe(
       'Descrição detalhada do que aconteceu, incluindo contexto, duração, transtornos e consequências práticas'
     ),
@@ -104,7 +104,7 @@ const registrarFatosSchema = z.object({
 
   prejuizo: z
     .string()
-    .min(10)
+    .min(1)
     .refine(val => !/não informad|não sei/i.test(val), 'VOCÊ PRECISA PERGUNTAR O PREJUÍZO. Não envie placeholders.')
     .describe('Descrição dos prejuízos financeiros, profissionais ou pessoais sofridos'),
 });
@@ -160,7 +160,7 @@ async function classificarTipoCasoPorFatos(fatos: {
       model: openai('gpt-4o-mini'),
       temperature: 0,
       schema: z.object({
-        tipoCaso: z.enum(['VOO_ONIBUS', 'BANCO', 'SAUDE', 'TRABALHO','BPC', 'INSS', 'GOV', 'GERAL']),
+        tipoCaso: z.enum(['VOO_ONIBUS', 'BANCO', 'SAUDE', 'TRABALHO', 'BPC', 'INSS', 'GOV', 'GERAL']),
         qualificacaoLead: z.enum(['QUENTE', 'MORNO', 'FRIO'])
       }),
       system: `
@@ -270,7 +270,7 @@ const CHECKLISTS: Record<TipoCaso, DocumentoChecklist[]> = {
     { codigo: 'CASO_DEFICIENTE', descricao: '👉 SE FOR POR DEFICIÊNCIA/DOENÇA: Laudo médico atualizado com CID, relatórios de especialistas e exames.', sensivel: true },
     { codigo: 'CASO_IDOSO', descricao: '👉 SE FOR IDOSO (65+): Certidão de nascimento ou casamento e Carteira de Trabalho (CTPS).' },
   ],
-  INSS: [    
+  INSS: [
     { codigo: 'SENHA_GOV', descricao: 'Senha do portal GOV.BR (necessária para análise de viabilidade)' },
     { codigo: 'CTPS', descricao: 'Carteira de Trabalho (CTPS)' },
   ],
@@ -289,7 +289,7 @@ const CHECKLISTS: Record<TipoCaso, DocumentoChecklist[]> = {
 export class ChatbotService {
   constructor() { }
 
-  async chat(message: string, customerPhone: string) {    
+  async chat(message: string, customerPhone: string) {
 
     let conversation = await prisma.conversation.findUnique({
       where: { customerPhone },
@@ -591,7 +591,7 @@ Assim que finalizar, me avise por aqui.
       textoResposta = textoResposta
         .replace(/<function=[\s\S]*?<\/function>/g, '') // Remove a tag completa
         .replace(/<tool_code>[\s\S]*?<\/tool_code>/g, '') // Previne outros formatos comuns
-        .trim();     
+        .trim();
     }
 
     // if (toolCalls.some(t => t.toolName === 'registrarFatos')) {
@@ -675,10 +675,10 @@ Assim que finalizar, me avise por aqui.
           data: {
             tempData: {
               ...currentTempData,
-              dinamica_do_dano: currentTempData.dinamica_do_dano ?? args.dinamica_do_dano,
-              empresa: currentTempData.empresa ?? args.empresa,
-              data_do_ocorrido: currentTempData.data_do_ocorrido ?? args.data_do_ocorrido,
-              prejuizo: currentTempData.prejuizo ?? args.prejuizo,
+              dinamica_do_dano: args.dinamica_do_dano ?? currentTempData.dinamica_do_dano,
+              empresa: args.empresa ?? currentTempData.empresa,
+              data_do_ocorrido: args.data_do_ocorrido ?? currentTempData.data_do_ocorrido,
+              prejuizo: args.prejuizo ?? currentTempData.prejuizo,
             },
           },
         });
@@ -731,6 +731,20 @@ Assim que finalizar, me avise por aqui.
       // 3. PRIORIDADE 2: Mudança de Fluxo (atualizarEtapa)
       if (callAtualizar) {
         console.log('[DEBUG] Atualizando Etapa via Tool');
+
+        const fatosParaValidar = conversation.tempData as any;
+        const fatosEstaoCompletos = fatosParaValidar?.dinamica_do_dano && fatosParaValidar?.empresa && fatosParaValidar?.data_do_ocorrido && fatosParaValidar?.prejuizo;
+
+        if (estadoAtual === 'COLETA_FATOS' && !fatosEstaoCompletos) {
+          console.log('[DEBUG] IA tentou avançar sem os 4 fatos preenchidos. Bloqueado pelo sistema.');
+          return this.responder({
+            intent: 'AGUARDAR_RESPOSTA',
+            conversation: buildContext(conversation),
+            contexto: {
+              instrucaoExtra: "Você tentou avançar de etapa, mas ainda faltam dados obrigatórios. Faça a pergunta sobre o que está faltando."
+            }
+          });
+        }
 
         const proximaEtapa = PROXIMA_ETAPA_POR_FLUXO[estadoAtual];
 
@@ -871,16 +885,17 @@ Durante a coleta, sua resposta deve parecer uma conversa natural, não um resumo
   1. CHAME A FERRAMENTA 'registrarFatos'.
   2. ⚠️ DEIXE SUA RESPOSTA DE TEXTO COMPLETAMENTE VAZIA. Não escreva absolutamente nenhuma palavra no chat se você for chamar a ferramenta. Não gere blocos de código. Apenas ative a ferramenta silenciosamente.
 
-Ao preencher a ferramenta "registrarFatos":
-- NÃO resuma.
-- NÃO use rótulos genéricos como: "atraso de voo", "problema bancário".
-- A descrição DEVE conter: o que aconteceu, por quanto tempo, impacto real na vida do cliente e consequências práticas.
+Ao preencher a ferramenta "registrarFatos", VOCÊ DEVE SEGUIR ESTA PADRONIZAÇÃO:
+- NÃO resuma o problema usando rótulos genéricos (ex: "atraso de voo", "problema bancário").
+- PADRONIZAÇÃO DE PREJUÍZO (MOEDA): Se o cliente informar um valor financeiro, mesmo que por extenso ou incompleto (ex: "duzentos reais", "200", "50 pila"), converta e formate SEMPRE com a moeda e em números (ex: "R$ 200,00"). Se houver prejuízo moral além do financeiro, descreva ambos.
+- PADRONIZAÇÃO DE DATA: Sempre que possível, converta a data informada para o formato DD/MM/AAAA (ex: "ontem" ou "dia 15" deve ser calculado baseado no contexto, ou formatado de forma clara).
+- DINÂMICA DO DANO: A descrição DEVE ser uma frase completa contendo: o que aconteceu, por quanto tempo, impacto real na vida do cliente e consequências práticas.
 
 Exemplo de uso correto da Tool "registrarFatos":
 - dinamica_do_dano: "O voo sofreu atraso de aproximadamente 12 horas, fazendo com que o cliente permanecesse no aeroporto durante todo o período, perdendo uma reunião profissional importante e enfrentando desgaste físico e emocional."
-- empresa: "Gol"
-- data_do_ocorrido: "03/03/26"
-- prejuizo: "Perda de reunião importante e gasto de R$500 com hospedagem"
+- empresa: "Gol Linhas Aéreas"
+- data_do_ocorrido: "03/03/2026"
+- prejuizo: "R$ 500,00 com hospedagem e perda de reunião importante"
 
 
 REGRA UNIVERSAL (OBRIGATÓRIA EM TODOS OS CASOS)
