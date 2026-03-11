@@ -17,5 +17,7 @@ export async function dashboardModule(app: FastifyInstance) {
     // Rota PUT: Salva a edição da meta anual
     group.put("/meta", (req, res) => controller.updateMeta(req, res));
 
+    group.get("/meta", (req, res) => controller.getMeta(req, res));
+
   }, { prefix: '/dashboard' });
 }

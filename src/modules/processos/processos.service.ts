@@ -41,7 +41,7 @@ export class ProcessosService {
           nome: input.clienteNome,
           cpf: input.clienteCpf,
           email: input.clienteEmail ?? null,
-          telefone: input.clienteTelefone ,
+          telefone: input.clienteTelefone,
           endereco: input.clienteEndereco ?? null
         }
       });
@@ -58,7 +58,7 @@ export class ProcessosService {
           nome: input.clienteNome,
           email: input.clienteEmail ?? null,
           telefone: input.clienteTelefone,
-          cpf: null ,
+          cpf: null,
           endereco: input.clienteEndereco ?? null
         }
       });
@@ -75,7 +75,7 @@ export class ProcessosService {
 
 
     // 5. Montagem do Payload do Prisma
-// 5. Montagem do Payload do Prisma
+    // 5. Montagem do Payload do Prisma
     const prismaData: Prisma.ProcessoCreateInput = {
       // --- CAMPOS OBRIGATÓRIOS ---
       descricaoObjeto: entity.props.descricaoObjeto,
@@ -97,7 +97,7 @@ export class ProcessosService {
 
       // 👇 CORREÇÃO AQUI: Usando `|| null` para garantir que campos vazios cheguem como null no banco
       numeroProcesso: entity.props.numeroProcesso?.trim() || null,
-      numeroCNJ: entity.props.numeroProcesso?.trim() || null, 
+      numeroCNJ: entity.props.numeroProcesso?.trim() || null,
 
       // 👇 VINCULAÇÃO COM O CHAT DO WHATSAPP AQUI
       ...(input.conversationId ? { conversation: { connect: { id: input.conversationId } } } : {}),
@@ -136,16 +136,22 @@ export class ProcessosService {
     return await prisma.processo.findMany({
       where: { arquivado },
       orderBy: { createdAt: 'desc' },
-      include: 
-      { cliente: true ,
+      include:
+      {
+        cliente: true,
         conversation: true
       }
     });
   }
 
   async findById(id: string, userId: string) {
+
+    console.log('--- DEBUG BUSCA PROCESSO ---');
+    console.log('ID do Processo (URL):', id);
+    console.log('ID do Usuário (Token):', userId);
+
     return await prisma.processo.findFirst({
-      where: { id, userId },
+      where: { id },
       include: {
         cliente: true,
         arquivos: true,
@@ -167,7 +173,7 @@ export class ProcessosService {
   }
 
   async update(id: string, userId: string, input: any) {
-    const processo = await prisma.processo.findFirst({ where: { id, userId } });
+    const processo = await prisma.processo.findFirst({ where: { id } });
     if (!processo) throw new Error("Processo não encontrado.");
 
     // 1. SEPARAR OS DADOS
@@ -185,17 +191,17 @@ export class ProcessosService {
 
     if (dadosProcesso.numeroProcesso !== undefined) {
       dadosProcesso.numeroProcesso = dadosProcesso.numeroProcesso?.trim() || null;
-      dadosProcesso.numeroCNJ = dadosProcesso.numeroProcesso; 
+      dadosProcesso.numeroCNJ = dadosProcesso.numeroProcesso;
     }
 
     // 2. ATUALIZAR O CLIENTE VINCULADO
     if (processo.clienteId) {
       const dadosParaOCliente: any = {};
-      
+
       if (dadosProcesso.clienteNome !== undefined) dadosParaOCliente.nome = dadosProcesso.clienteNome;
       if (dadosProcesso.clienteCpf !== undefined) dadosParaOCliente.cpf = dadosProcesso.clienteCpf;
       if (dadosProcesso.clienteEmail !== undefined) dadosParaOCliente.email = dadosProcesso.clienteEmail;
-      
+
       if (clienteTelefone !== undefined) dadosParaOCliente.telefone = clienteTelefone;
       if (clienteEndereco !== undefined) dadosParaOCliente.endereco = clienteEndereco;
 
@@ -210,7 +216,7 @@ export class ProcessosService {
     // 3. LÓGICA DE ATUALIZAÇÃO DOS ARQUIVOS E MUDANÇA DE WORKFLOW
     if (arquivos && Array.isArray(arquivos)) {
       dadosProcesso.arquivos = {
-        deleteMany: {}, 
+        deleteMany: {},
         create: arquivos.map((arq: any) => ({
           tipo: arq.tipo, // O front manda 'CONTRATO', 'PROCURACAO', 'DOCUMENTO', etc
           url: arq.url,
@@ -227,7 +233,7 @@ export class ProcessosService {
 
       // Se ambos foram anexados E esse processo nasceu de uma conversa de WhatsApp
       if (temContrato && temProcuracao && processo.conversationId) {
-        
+
         console.log(`✅ Contrato e Procuração anexados. Finalizando o Lead (Conversa ID: ${processo.conversationId})...`);
 
         // Atualizamos o Workflow da Conversa
@@ -250,7 +256,7 @@ export class ProcessosService {
   }
 
   async listAndamentos(processoId: string, userId: string) {
-    const processo = await prisma.processo.findFirst({ where: { id: processoId, userId } });
+    const processo = await prisma.processo.findFirst({ where: { id: processoId } });
     if (!processo) throw new Error("Processo não encontrado.");
 
     return await prisma.andamento.findMany({
@@ -290,7 +296,7 @@ export class ProcessosService {
       // Dados do Processo pai
       numeroProcesso: andamento.processo.numeroProcesso || andamento.processo.numeroCNJ,
       clienteNome: andamento.processo.clienteNome,
-      
+
       // Dados estruturados do Andamento para a sua tabela
       tribunal: andamento.tribunal || 'Não informado',
       orgaoJulgador: andamento.orgaoJulgador || 'Vara não informada',
@@ -298,7 +304,7 @@ export class ProcessosService {
         nome: andamento.titulo,
         dataHora: andamento.dataMovimento || andamento.createdAt
       },
-      
+
       // Enviando o resto dos dados originais por segurança
       idAndamento: andamento.id,
       processoId: andamento.processoId,
@@ -347,29 +353,29 @@ export class ProcessosService {
       where: { id }
     });
   }
-  
+
   async buscarAndamentosPorCpf(cpf: string, userId: string) {
 
-  // 1️⃣ Busca processos do cliente
-  const processos = await prisma.processo.findMany({
-    where: {
-      clienteCpf: cpf,
-      userId,
-      arquivado: false
-    },
-    include: {
-      andamentos: {
-        orderBy: { createdAt: 'desc' },
-        take: 5 // últimos 5 andamentos
+    // 1️⃣ Busca processos do cliente
+    const processos = await prisma.processo.findMany({
+      where: {
+        clienteCpf: cpf,
+        userId,
+        arquivado: false
+      },
+      include: {
+        andamentos: {
+          orderBy: { createdAt: 'desc' },
+          take: 5 // últimos 5 andamentos
+        }
       }
+    });
+
+    if (!processos.length) {
+      return null;
     }
-  });
 
-  if (!processos.length) {
-    return null;
+    return processos;
   }
-
-  return processos;
-}
 
 }

@@ -888,12 +888,17 @@ Diga que quando terminar, deve digitar FINALIZAR.`;
   }
 
 
-  async markAsRead(messageId: string) {
-    await this.callMetaApi('/messages', 'POST', {
-      messaging_product: 'whatsapp',
-      status: 'read',
-      message_id: messageId
-    });
+ async markAsRead(messageId: string) {
+    try {
+      await this.callMetaApi('/messages', 'POST', {
+        messaging_product: 'whatsapp',
+        status: 'read',
+        message_id: messageId
+      });
+    } catch (error: any) {
+      // Apenas avisa no console, mas NÃO derruba a aplicação
+      console.warn(`⚠️ [Aviso] Falha de rede ao marcar mensagem como lida. Vida que segue...`, error.message);
+    }
   }
 
   // --- Helper para mapear tipos MIME para o Enum do Prisma ---

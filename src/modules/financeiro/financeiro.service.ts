@@ -76,7 +76,7 @@ export class FinanceiroService {
 
   async list(userId: string) {
     return await prisma.transacao.findMany({
-      where: { createdBy: userId, arquivado: false },
+      where: {  arquivado: false },
       orderBy: { data: 'desc' }, // Melhor ordenar pela data da transação ao invés de createdAt
       include: {
         user: { select: { nome: true } }

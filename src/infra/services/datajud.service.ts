@@ -13,7 +13,9 @@ export interface ConsultaMovimentacaoResponse {
   tribunal?: string | null;
   juizo: string;
   classe: string;
+  assuntos?: Array<{ nome: string }>;
   movimentos: Movimento[];
+  orgaoJulgador?: { nome: string };
 }
 
 export class DatajudService {
@@ -48,6 +50,8 @@ export class DatajudService {
         tribunal: dados.tribunal ?? null,
         juizo: dados.orgaoJulgador?.nome ?? 'Não informado',
         classe: dados.classe?.nome ?? 'Não informado',
+        assuntos: dados.assuntos, 
+        orgaoJulgador: dados.orgaoJulgador,
         movimentos: dados.movimentos.map((m: any) => ({
           codigo: m.codigo,
           nome: m.nome,

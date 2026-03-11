@@ -347,3 +347,18 @@ model AiDecisionLog {
   model          String
   createdAt      DateTime @default(now())
 }
+
+
+model ConfiguracaoEscritorio {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  metaFaturamento Float    @default(80000)
+  
+  // Futuramente você pode adicionar:
+  // nomeEscritorio String?
+  // cnpj           String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("configuracoes_escritorio")
+}

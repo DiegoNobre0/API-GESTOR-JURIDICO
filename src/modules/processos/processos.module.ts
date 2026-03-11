@@ -3,14 +3,28 @@ import { ProcessosService } from "./processos.service.js";
 import { createProcessoSchema } from "./dto/create-processo.dto.js";
 import z from "zod";
 import { ProcessosController } from "./processos.controller.js";
+import { CronJobService } from "@/infra/services/CronJob.service.js";
 
 export async function processosModule(app: FastifyInstance) {
   const service = new ProcessosService();
   const controller = new ProcessosController();
 
+  const cronService = new CronJobService();
+
+app.get('/processos/teste-monitoramento', async (request, reply) => {
+    console.log("🚀 [TESTE PÚBLICO] Disparando monitoramento manual...");
+    
+    cronService.executarMonitoramento()
+      .then(() => console.log("✅ [TESTE PÚBLICO] Fim do processamento."))
+      .catch(e => console.error("❌ [TESTE PÚBLICO] Erro no processamento:", e));
+
+    return reply.send({ 
+      message: "Monitoramento disparado! Verifique o console do VS Code." 
+    });
+  });
+
   app.register(async (group) => {
     group.addHook("preHandler", app.authenticate);
-
     // Listar Ativos
     group.get("/", async (req) => service.list(req.user.sub, false));
 

@@ -5,186 +5,160 @@ import { DatajudService } from './datajud.service.js';
 import { MailService } from './mail-service.js';
 import { openai } from '@ai-sdk/openai';
 
+export class CronJobService {
+  private datajud = new DatajudService();
+  private mail = new MailService();
 
-console.log('📌 [SISTEMA] Arquivo de agendamento do Datajud (04h00) carregado na memória!');
+  constructor() {
+    console.log('📌 [SISTEMA] Serviço de Agendamento (CronJob) inicializado!');
+  }
 
+  /**
+   * Inicia o agendamento automático para as 04h00
+   */
+  async iniciarAgendamento() {
+    cron.schedule('0 4 * * *', async () => {
+      await this.executarMonitoramento();
+    });
+    console.log('⏰ [CRON] Agendamento automático configurado para as 04h00.');
+  }
 
-cron.schedule('0 4 * * *', async () => {
-  console.log('⏳ [CRON] Iniciando monitoramento inteligente...');
+  /**
+   * Executa a lógica de monitoramento. 
+   * Pode ser chamado pelo Cron ou manualmente por uma rota de teste.
+   */
+  async executarMonitoramento() {
+    console.log('⏳ [SISTEMA] Iniciando monitoramento com Resumo Geral por IA...');
 
-  const datajud = new DatajudService();
-  const mail = new MailService();
-
-  try {
-    const usuarios = await prisma.user.findMany({
-      where: {
-        ativo: true,
-        notificarPje: true
-      },
-      include: {
-        processos: {
-          where: {
-            arquivado: false,
-            numeroProcesso: { not: null }
+    try {
+      const usuarios = await prisma.user.findMany({
+        where: { ativo: true, notificarPje: true },
+        include: {
+          processos: {
+            where: { arquivado: false, numeroProcesso: { not: null } }
           }
         }
-      }
-    });
+      });
 
-    for (const usuario of usuarios) {
-      if (!usuario.email || usuario.processos.length === 0) continue;
+      for (const usuario of usuarios) {
+        if (!usuario.email || usuario.processos.length === 0) continue;
 
-      let resumoEmail = '';
-      let houveNovidade = false;
+        let resumoEmail = '';
+        let houveNovidade = false;
 
-      console.log(`👤 Processando usuário: ${usuario.nome}`);
+        console.log(`👤 Processando usuário: ${usuario.nome} (${usuario.processos.length} processos)`);
 
-      for (const processo of usuario.processos) {
-        try {
-          if (!processo.numeroProcesso) continue;
-
-          const apenasNumeros = processo.numeroProcesso.replace(/\D/g, '');
-
-          if (apenasNumeros.length !== 20) {
-            console.log(`⏭️ Ignorando busca: ${processo.numeroProcesso} (Não é formato CNJ)`);
-            continue; // Pula para o próximo item da lista
-          }
-
-          console.log(`🔎 Processo: ${processo.numeroProcesso}`);
-
-
-          const dados = await datajud.consultarMovimentacoes(
-            processo.numeroProcesso
-          );
-
-          if (!dados?.movimentos?.length) {
-            console.log('⚪ Nenhum movimento encontrado.');
-            continue;
-          }
-
-          // 🔥 Ordena do mais recente para o mais antigo
-          const movimentosOrdenados = [...dados.movimentos].sort(
-            (a, b) =>
-              new Date(b.dataHora).getTime() -
-              new Date(a.dataHora).getTime()
-          );
-
-          const ultimoMovimento = movimentosOrdenados[0];
-
-          if (!ultimoMovimento) {
-            console.log('⚪ Nenhum movimento válido após ordenação.');
-            continue;
-          }
-
-          const codigoMov = ultimoMovimento.codigo;
-          const nomeMov = ultimoMovimento.nome;
-          const dataMov = new Date(ultimoMovimento.dataHora);
-          const orgao = ultimoMovimento.orgaoJulgador?.nome ?? null;
-          const tribunal = dados.tribunal ?? null;
-
-          // ✅ Anti-duplicação
-          const jaExiste = await prisma.andamento.findFirst({
-            where: {
-              processoId: processo.id,
-              codigoMovimento: codigoMov,
-              dataMovimento: dataMov
-            }
-          });
-
-          if (jaExiste) {
-            console.log(`✅ Sem novidade para ${processo.numeroProcesso}`);
-            continue;
-          }
-
-          console.log(`🤖 Novo movimento detectado: ${nomeMov}`);
-
-          // 🤖 Geração de resumo IA
-          let resumoAmigavel = nomeMov;
-
+        for (const processo of usuario.processos) {
           try {
-            const { text } = await generateText({
-              model: openai('gpt-4o-mini'),
-              temperature: 0.2,
-              system: `
-Você é assistente jurídico da RCS Gestão Jurídica.
-Explique movimentações judiciais para clientes leigos.
-Use linguagem simples e até 180 caracteres.
-              `,
-              prompt: `
-Explique de forma simples:
+            // Segurança: Garantir que numeroProcesso existe (TS Guard)
+            if (!processo.numeroProcesso) continue;
 
-Movimento: ${nomeMov}
-Data: ${dataMov.toLocaleDateString('pt-BR')}
-Vara: ${orgao ?? 'Não informado'}
-Tribunal: ${tribunal ?? 'Não informado'}
-              `
+            const dados = await this.datajud.consultarMovimentacoes(processo.numeroProcesso);
+            if (!dados?.movimentos?.length) continue;
+
+            // 1. Ordenação dos movimentos (mais recente primeiro)
+            const movimentos = [...dados.movimentos].sort(
+              (a, b) => new Date(b.dataHora).getTime() - new Date(a.dataHora).getTime()
+            );
+
+            const ultimoMovimento = movimentos[0];
+            
+            // Segurança: Type Guard para o último movimento
+            if (!ultimoMovimento) continue;
+
+            const dataUltimoMov = new Date(ultimoMovimento.dataHora);
+
+            // 2. Anti-duplicação: Verifica se este movimento exato já foi salvo
+            const jaExiste = await prisma.andamento.findFirst({
+              where: {
+                processoId: processo.id,
+                codigoMovimento: ultimoMovimento.codigo,
+                dataMovimento: dataUltimoMov
+              }
             });
 
-            resumoAmigavel = text.trim();
-          } catch {
-            console.log('⚠ Erro na IA, usando texto original.');
-          }
-
-          // 💾 Salva andamento
-          await prisma.andamento.create({
-            data: {
-              processoId: processo.id,
-              titulo: nomeMov,
-              descricao: resumoAmigavel,
-              autorNome: 'Assistente RCS (IA)',
-              createdBy: usuario.id,
-
-              codigoMovimento: codigoMov,
-              dataMovimento: dataMov,
-              orgaoJulgador: orgao,
-              tribunal: tribunal
+            if (jaExiste) {
+              console.log(`✅ Processo ${processo.numeroProcesso} já está atualizado.`);
+              continue;
             }
-          });
 
-          houveNovidade = true;
+            console.log(`🤖 Novidade detectada: ${processo.numeroProcesso}. Gerando panorama...`);
 
-          resumoEmail += `
-            <div style="margin-bottom:20px;border-left:4px solid #27ae60;padding-left:15px;">
-              <strong>${processo.clienteNome}</strong><br>
-              <span style="color:#2e7d32;">● ${resumoAmigavel}</span><br>
-              <small>${dataMov.toLocaleDateString('pt-BR')}</small>
-            </div>
-          `;
+            // 3. Preparação do histórico para a IA
+            const historicoSimplificado = movimentos.slice(0, 10).map(m => 
+              `- ${new Date(m.dataHora).toLocaleDateString('pt-BR')}: ${m.nome}`
+            ).join('\n');
 
-          // Anti rate-limit
-          await new Promise(r => setTimeout(r, 700));
+            const assuntosStr = dados.assuntos?.map((a: any) => a.nome).join(', ') || 'Não informados';
+            const varaNome = dados.orgaoJulgador?.nome || 'Vara não informada';
 
-        } catch (erroProcesso) {
-          console.error(
-            `❌ Erro no processo ${processo.numeroProcesso}`,
-            erroProcesso
+            // 4. Chamada da IA para Resumo Contextual
+            let resumoPanorama = '';
+            try {
+              const { text } = await generateText({
+                model: openai('gpt-4o-mini'),
+                temperature: 0.3,
+                system: `Você é um advogado sênior da RCS Gestão Jurídica. Explique a situação para o cliente de forma simples e humana (máx 250 caracteres). Evite juridiquês pesado.`,
+                prompt: `Número: ${processo.numeroProcesso}\nAssuntos: ${assuntosStr}\nVara: ${varaNome}\nHistórico Recente:\n${historicoSimplificado}\n\nResuma o que aconteceu de mais importante e o que significa agora.`
+              });
+              resumoPanorama = text.trim();
+            } catch (err) {
+              resumoPanorama = `Identificamos uma nova movimentação: ${ultimoMovimento.nome}. Verifique seu painel para mais detalhes.`;
+            }
+
+            // 5. Salva o Andamento no Banco
+            await prisma.andamento.create({
+              data: {
+                processoId: processo.id,
+                titulo: `Situação Atual: ${ultimoMovimento.nome}`,
+                descricao: resumoPanorama,
+                autorNome: 'Analista RCS (IA)',
+                createdBy: usuario.id,
+                codigoMovimento: ultimoMovimento.codigo,
+                dataMovimento: dataUltimoMov,
+                orgaoJulgador: varaNome,
+                tribunal: dados.tribunal ?? null
+              }
+            });
+
+            houveNovidade = true;
+            resumoEmail += `
+              <div style="margin-bottom:20px; border-left:4px solid #3498db; padding-left:15px;">
+                <strong style="color: #2c3e50;">${processo.clienteNome}</strong><br>
+                <small style="color: #7f8c8d;">Processo: ${processo.numeroProcesso}</small>
+                <p style="background:#f9f9f9; padding:12px; border-radius:6px; margin-top:8px; color: #34495e;">
+                  <strong>Panorama:</strong> ${resumoPanorama}
+                </p>
+              </div>`;
+
+            // Anti rate-limit para Datajud e OpenAI
+            await new Promise(r => setTimeout(r, 800));
+
+          } catch (err) {
+            console.error(`❌ Erro ao processar processo ${processo.numeroProcesso}:`, err);
+          }
+        }
+
+        // 6. Envio do E-mail Consolidado por Usuário
+        if (houveNovidade && usuario.email) {
+          console.log(`📧 Enviando e-mail de atualização para ${usuario.email}`);
+          await this.mail.sendEmail(
+            usuario.email,
+            `Atualização Jurídica - ${new Date().toLocaleDateString('pt-BR')}`,
+            `<h2>Olá ${usuario.nome},</h2>
+             <p>Nossa inteligência jurídica detectou novidades nos seus processos:</p>
+             ${resumoEmail}
+             <p style="margin-top:20px;">Atenciosamente,<br><strong>Equipe RCS Gestão Jurídica</strong></p>`
           );
         }
       }
 
-      // 📧 Envio consolidado
-      if (houveNovidade) {
-        console.log(`📧 Enviando e-mail para ${usuario.email}`);
+      console.log('✅ [SISTEMA] Monitoramento finalizado com sucesso.');
+      return { success: true, message: "Monitoramento concluído." };
 
-        const htmlFinal = `
-          <h2>Olá ${usuario.nome},</h2>
-          <p>Detectamos novas movimentações em seus processos:</p>
-          ${resumoEmail}
-          <br>
-          <p>Equipe RCS Gestão Jurídica</p>
-        `;
-
-        await mail.sendEmail(
-          usuario.email,
-          `Atualização Jurídica - ${new Date().toLocaleDateString('pt-BR')}`,
-          htmlFinal
-        );
-      }
+    } catch (err) {
+      console.error('🔥 ERRO CRÍTICO NO SERVIÇO DE MONITORAMENTO:', err);
+      throw err;
     }
-
-    console.log('✅ [CRON] Monitoramento finalizado com sucesso.');
-
-  } catch (erroGeral) {
-    console.error('🔥 ERRO CRÍTICO NO CRON:', erroGeral);
   }
-});
+}
