@@ -14,7 +14,7 @@ import { NotifyDailyAgendaService } from './modules/agenda/notify-daily-agenda.s
 // 👇 AQUI ESTÁ O SEGREDO: Importar o arquivo do cron do Datajud
 // (Ajuste o caminho para onde o seu arquivo datajud.cron.ts realmente está)
 import '../src/infra/services/CronJob.service.js'; 
-
+import { CronJobService } from './infra/services/CronJob.service.js';
 // --- IMPORTAÇÕES DE MÓDULOS ---
 import { authModule } from './modules/auth/auth.module.js';
 import { dashboardModule } from './modules/dashboard/dashboard.module.js';
@@ -84,7 +84,8 @@ cron.schedule('0 18 * * *', async () => {
 });
 
 // A ROTINA 2 (Datajud) já foi ativada automaticamente lá no topo do arquivo 
-// com o import './modules/processos/datajud.cron.js';
+const cronJobService = new CronJobService();
+cronJobService.iniciarAgendamento();
 
 /* =======================================================
    4️⃣ START SERVER COM SOCKET (VPS)
