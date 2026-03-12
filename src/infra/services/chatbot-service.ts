@@ -282,6 +282,7 @@ const CHECKLISTS: Record<TipoCaso, DocumentoChecklist[]> = {
   ],
 };
 
+
 /* ---------------------------------
    SERVICE
 --------------------------------- */
@@ -356,6 +357,23 @@ export class ChatbotService {
         return resposta;
       }
     }
+
+    // Se o returnFlow estiver preenchido, ele já está no meio da consulta (ex: digitando CPF ou escolhendo o número)
+    if (conversation.returnFlow) {
+      return this.handleRetornoCliente(texto, conversation);
+    }
+
+    // Intercepta se ele digitar alguma palavra-chave de processo, mesmo se estiver no meio de outra coisa
+    if (this.detectarConsultaProcesso(texto) && conversation.workflowStep !== 'FINALIZADO') {
+      
+      await prisma.conversation.update({
+        where: { customerPhone },
+        data: { returnFlow: 'AGUARDANDO_CPF' } // Pula o menu e vai direto pedir o CPF
+      });
+
+      return `Olá! 🏢 Para localizar o andamento dos seus processos, por favor, me informe o seu *CPF* (apenas números).`;
+    }
+
 
     if (conversation.workflowStep === 'FINALIZADO') {
       return this.handleRetornoCliente(texto, conversation);
@@ -1534,7 +1552,16 @@ Pode me contar o que aconteceu?`;
     return msg;
   }
 
-
-
-
+  private detectarConsultaProcesso(texto: string): boolean {
+    const t = texto.toLowerCase();
+    return [
+      'processo',
+      'meu processo',
+      'andamento',
+      'consultar processo',
+      'ver processo',
+      'status do processo',
+      '/processo'
+    ].some(p => t.includes(p));
+  }
 }
