@@ -27,7 +27,7 @@ model User {
   notificarPje       Boolean @default(true)
   horarioNotificacao String  @default("07:00")
   ativo              Boolean @default(true) // Para o toggle de Status na tabela
-  metaFaturamento    Float    @default(80000)
+  
 
   // Relacionamentos Reais (Back-references)
   processos          Processo[]

@@ -161,6 +161,7 @@ async atualizarMeta(novaMeta: number) {
   }
 
 async criarMeta() {
+  console.log(Object.keys(prisma));
     // 1. Tenta buscar a primeira (e única) configuração do banco
     let config = await prisma.configuracaoEscritorio.findFirst();
 
