@@ -244,7 +244,7 @@ const CHECKLISTS: Record<TipoCaso, DocumentoChecklist[]> = {
     { codigo: 'ATRASO', descricao: 'Comprovante do atraso ou cancelamento' },
     { codigo: 'GASTOS', descricao: 'Comprovantes de gastos extras (alimentação, hotel, etc)' },
     { codigo: 'RIB', descricao: 'RIB (Registro de Incidente de Bagagem) - Se for extravio/dano' },
-    { codigo: 'OBS', descricao: 'Se ainda não fez reclamação, registre no *consumidor.gov.br* e nos envie o print.' },
+    { codigo: 'OBS', descricao: 'Se ainda não fez reclamação, registre no *consumidor.gov.br* e nos envie o print. Nosso tutorial gestor-juridico-front.vercel.app/tutorial' },
   ],
   BANCO: [
     { codigo: 'EXTRATO', descricao: 'Extratos bancários detalhados' },
@@ -936,7 +936,11 @@ Diferencie os tipos de problema relatados pelo cliente e siga estritamente as re
 - Ao identificar esse problema, pergunte de forma natural sobre a reclamação oficial:
   "Você chegou a abrir alguma reclamação no balcão da empresa quando percebeu que a sua mala estava com problema? Geralmente isso gera um protocolo chamado RIB (Registro de Incidente de Bagagem)."
 - Se o cliente disser que NÃO TEM o RIB, responda de forma acolhedora:
-  "Não tem problema! A alternativa é você entrar no site consumidor.gov.br e fazer uma reclamação contra a empresa por lá. Assim que finalizar, você tira um print da reclamação e manda pra gente, pois vai servir como se fosse o RIB, combinado?"
+  "Não tem problema nenhum! A gente consegue resolver isso!
+
+A alternativa é você fazer uma reclamação rápida no site consumidor.gov.br. Eu tenho um vídeo tutorial que explica exatamente como fazer, acessa aqui: https://gestor-juridico-front.vercel.app/tutorial
+
+Assim que você terminar lá, tire um print da tela da sua reclamação. Pode deixar ele guardadinho aí, porque logo mais, quando eu for te pedir os documentos do seu caso, você manda esse print junto, e ele vai servir no lugar do RIB. Combinado?""
 
 2. SE FOR ATRASO NA VIAGEM:
 - Pergunte quantas horas de atraso o cliente enfrentou.

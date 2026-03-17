@@ -87,7 +87,7 @@ export class FinanceiroService {
  // MÉTODO DE EDITAR (Atualiza a transação e calcula a diferença de caixa no processo)
   async update(id: string, userId: string, data: Partial<CreateFinanceiroInput>) {
     return await prisma.$transaction(async (tx) => {
-      const transacaoAntiga = await tx.transacao.findFirst({ where: { id, createdBy: userId } });
+      const transacaoAntiga = await tx.transacao.findFirst({ where: { id } });
       if (!transacaoAntiga) throw new Error("Transação não encontrada.");
 
       // Se o valor mudou e há um processo vinculado, precisamos arrumar o cofre do processo!
@@ -129,7 +129,7 @@ export class FinanceiroService {
 
   async setArquivado(id: string, userId: string, status: boolean) {
     return await prisma.transacao.updateMany({
-      where: { id, createdBy: userId },
+      where: { id },
       data: { arquivado: status }
     });
   }
@@ -137,7 +137,7 @@ export class FinanceiroService {
   // 👇 DELETAR AGORA SUPORTA APAGAR LOTE E DESCONTAR DO PROCESSO
   async delete(id: string, userId: string, apagarLoteCompleto: boolean = false) {
     return await prisma.$transaction(async (tx) => {
-      const transacao = await tx.transacao.findFirst({ where: { id, createdBy: userId } });
+      const transacao = await tx.transacao.findFirst({ where: { id} });
       if (!transacao) throw new Error("Transação não encontrada.");
 
       let whereClause: any = { id };
@@ -145,7 +145,7 @@ export class FinanceiroService {
 
       // Se pedir pra apagar o lote e essa transação fizer parte de um lote
       if (apagarLoteCompleto && transacao.grupoRecorrenciaId) {
-        whereClause = { grupoRecorrenciaId: transacao.grupoRecorrenciaId, createdBy: userId };
+        whereClause = { grupoRecorrenciaId: transacao.grupoRecorrenciaId};
         
         // Descobre quantas parcelas existem e qual o valor total pra devolver no Processo
         const loteDeTransacoes = await tx.transacao.findMany({ where: whereClause });
