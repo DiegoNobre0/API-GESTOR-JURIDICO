@@ -292,11 +292,11 @@ const LINKS_ASSINATURA: Record<TipoCaso, { contrato: string; procuracao: string 
     procuracao: 'https://app.zapsign.com.br/verificar/doc/a5e0c61b-2f72-469b-b952-8f92ecd3f151',
   },
   BPC: {
-    contrato: 'https://app.zapsign.com.br/verificar/5c845161-cf80-4d34-9b38-7ad6cdb9dbfc',
+    contrato: 'https://app.zapsign.com.br/verificar/doc/95d8de18-3f25-4d9b-b163-e5cf8c168136',
     procuracao: 'https://app.zapsign.com.br/verificar/doc/dfdf1a1a-95c3-4b8b-903d-7eb0c245914d',
   },
   INSS: {
-    contrato: 'https://app.zapsign.com.br/verificar/5c845161-cf80-4d34-9b38-7ad6cdb9dbfc',
+    contrato: 'https://app.zapsign.com.br/verificar/doc/95d8de18-3f25-4d9b-b163-e5cf8c168136',
     procuracao: 'https://app.zapsign.com.br/verificar/doc/dfdf1a1a-95c3-4b8b-903d-7eb0c245914d',
   },
   VOO_ONIBUS: {
