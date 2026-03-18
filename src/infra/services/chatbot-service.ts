@@ -303,7 +303,7 @@ const LINKS_ASSINATURA: Record<TipoCaso, { contrato: string; procuracao: string 
     contrato: 'https://app.zapsign.com.br/verificar/doc/65194d71-ad5d-4192-a2b2-5838f664a6dc',
     procuracao: 'https://app.zapsign.com.br/verificar/doc/52151f47-c845-45a7-beae-6cd1042d5ecb',
   },
-  // Abaixo são os fallbacks usando o contrato padrão para os demais tipos de caso
+
   BANCO: {
     contrato: 'https://app.zapsign.com.br/verificar/doc/65194d71-ad5d-4192-a2b2-5838f664a6dc',
     procuracao: 'https://app.zapsign.com.br/verificar/doc/52151f47-c845-45a7-beae-6cd1042d5ecb',
@@ -405,7 +405,7 @@ export class ChatbotService {
 
     // Intercepta se ele digitar alguma palavra-chave de processo, mesmo se estiver no meio de outra coisa
     if (this.detectarConsultaProcesso(texto) && conversation.workflowStep !== 'FINALIZADO') {
-      
+
       await prisma.conversation.update({
         where: { customerPhone },
         data: { returnFlow: 'AGUARDANDO_CPF' } // Pula o menu e vai direto pedir o CPF
@@ -578,6 +578,28 @@ Em breve você receberá atualizações.
 
       // Cliente finalizou manualmente
       if (texto.toUpperCase().includes('FINALIZAR')) {
+
+        // SE FOR CASO GERAL: Envia email e paralisa o envio de links automáticos
+        if (tipoCaso === 'GERAL') {
+          await prisma.conversation.update({
+            where: { customerPhone },
+            data: {
+              workflowStep: 'ASSINATURA', 
+              fallbackStage: 0
+            },
+          });
+
+          await this.notificarAdvogado('CASO_ESPECIFICO', conversation);
+
+          return `
+Perfeito! Recebemos todas as provas.
+
+Nossa equipe jurídica já foi notificada para fazer uma análise inicial e vai gerar um *contrato e procuração totalmente personalizados* para você.
+
+Em breve, um de nossos advogados vai te chamar por aqui com os documentos para assinatura!
+`.trim();
+        }
+
 
         await prisma.conversation.update({
           where: { customerPhone },
@@ -1221,7 +1243,7 @@ Agora, responda à última mensagem do cliente seguindo estas diretrizes.
   }
 
 
-  async notificarAdvogado(tipo: 'ASSINOU' | 'AJUDA' | 'PRIMEIRO_CONTATO', conversation: any) {
+  async notificarAdvogado(tipo: 'ASSINOU' | 'AJUDA' | 'PRIMEIRO_CONTATO' | 'CASO_ESPECIFICO', conversation: any) {
     const advogados = await prisma.user.findMany({
       where: {
         ativo: true
@@ -1255,6 +1277,12 @@ Agora, responda à última mensagem do cliente seguindo estas diretrizes.
       tituloAlert = 'Novo Contato Iniciado';
       mensagem = 'Um novo lead começou a interagir com o assistente virtual do escritório.';
       corDestaque = '#f59e0b'; // Laranja Alert
+    }
+    else if (tipo === 'CASO_ESPECIFICO') {
+      subject = '⚠️ Análise e Contrato Personalizado: ' + (conversation.customerName || 'Cliente');
+      tituloAlert = 'Caso Genérico / Específico';
+      mensagem = 'O cliente finalizou o envio de provas, mas o caso foi classificado como GERAL. É necessário que a equipe faça a análise humana para gerar e enviar um contrato/procuração personalizados diretamente pelo WhatsApp.';
+      corDestaque = '#8b5cf6'; // Roxo Purple para destacar no email
     }
 
     // Variáveis do cliente (Tratamento para não dar undefined)
@@ -1412,7 +1440,7 @@ Pode me contar o que aconteceu?`;
     // ====================================
     // ETAPA 3 - RECEBER CPF
     // ====================================
-   if (conversation.returnFlow === 'AGUARDANDO_CPF') {
+    if (conversation.returnFlow === 'AGUARDANDO_CPF') {
 
       // 1. Remove tudo que não for número
       const documentoLimpo = texto.replace(/\D/g, '');
