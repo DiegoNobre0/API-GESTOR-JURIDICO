@@ -113,7 +113,7 @@ export class NotifyDailyAgendaService {
             <ul style="list-style: none; padding: 0; margin: 0;">${htmlTarefas}</ul>
             
             <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #f1f5f9; text-align: center; color: #94a3b8; font-size: 12px;">
-              Este e-mail foi gerado automaticamente pelo seu <b>Nobre Gestor Jurídico</b>.
+              Este e-mail foi gerado automaticamente pelo seu <b>RCS Gestor Jurídico</b>.
             </div>
           </div>
         </div>

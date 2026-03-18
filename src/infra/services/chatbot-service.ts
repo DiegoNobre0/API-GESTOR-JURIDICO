@@ -284,6 +284,46 @@ const CHECKLISTS: Record<TipoCaso, DocumentoChecklist[]> = {
 
 
 /* ---------------------------------
+   LINKS DE ASSINATURA (ZAPSIGN)
+--------------------------------- */
+const LINKS_ASSINATURA: Record<TipoCaso, { contrato: string; procuracao: string }> = {
+  SAUDE: {
+    contrato: 'https://app.zapsign.com.br/verificar/doc/e393eb9d-23e0-49cc-965c-6cc31d020e1c',
+    procuracao: 'https://app.zapsign.com.br/verificar/doc/a5e0c61b-2f72-469b-b952-8f92ecd3f151',
+  },
+  BPC: {
+    contrato: 'https://app.zapsign.com.br/verificar/5c845161-cf80-4d34-9b38-7ad6cdb9dbfc',
+    procuracao: 'https://app.zapsign.com.br/verificar/doc/dfdf1a1a-95c3-4b8b-903d-7eb0c245914d',
+  },
+  INSS: {
+    contrato: 'https://app.zapsign.com.br/verificar/5c845161-cf80-4d34-9b38-7ad6cdb9dbfc',
+    procuracao: 'https://app.zapsign.com.br/verificar/doc/dfdf1a1a-95c3-4b8b-903d-7eb0c245914d',
+  },
+  VOO_ONIBUS: {
+    contrato: 'https://app.zapsign.com.br/verificar/doc/65194d71-ad5d-4192-a2b2-5838f664a6dc',
+    procuracao: 'https://app.zapsign.com.br/verificar/doc/52151f47-c845-45a7-beae-6cd1042d5ecb',
+  },
+  // Abaixo são os fallbacks usando o contrato padrão para os demais tipos de caso
+  BANCO: {
+    contrato: 'https://app.zapsign.com.br/verificar/doc/65194d71-ad5d-4192-a2b2-5838f664a6dc',
+    procuracao: 'https://app.zapsign.com.br/verificar/doc/52151f47-c845-45a7-beae-6cd1042d5ecb',
+  },
+  TRABALHO: {
+    contrato: 'https://app.zapsign.com.br/verificar/doc/65194d71-ad5d-4192-a2b2-5838f664a6dc',
+    procuracao: 'https://app.zapsign.com.br/verificar/doc/52151f47-c845-45a7-beae-6cd1042d5ecb',
+  },
+  GOV: {
+    contrato: 'https://app.zapsign.com.br/verificar/doc/65194d71-ad5d-4192-a2b2-5838f664a6dc',
+    procuracao: 'https://app.zapsign.com.br/verificar/doc/52151f47-c845-45a7-beae-6cd1042d5ecb',
+  },
+  GERAL: {
+    contrato: 'https://app.zapsign.com.br/verificar/doc/65194d71-ad5d-4192-a2b2-5838f664a6dc',
+    procuracao: 'https://app.zapsign.com.br/verificar/doc/52151f47-c845-45a7-beae-6cd1042d5ecb',
+  },
+};
+
+
+/* ---------------------------------
    SERVICE
 --------------------------------- */
 
@@ -547,8 +587,9 @@ Em breve você receberá atualizações.
           },
         });
 
-        const contrato = "https://app.zapsign.com.br/verificar/doc/65194d71-ad5d-4192-a2b2-5838f664a6dc"
-        const procuracao = "https://app.zapsign.com.br/verificar/doc/52151f47-c845-45a7-beae-6cd1042d5ecb"
+        const linksDoCaso = LINKS_ASSINATURA[tipoCaso] || LINKS_ASSINATURA['GERAL'];
+        const contrato = linksDoCaso.contrato;
+        const procuracao = linksDoCaso.procuracao;
 
         return `
 Perfeito! Recebemos todas as provas.
@@ -1371,23 +1412,32 @@ Pode me contar o que aconteceu?`;
     // ====================================
     // ETAPA 3 - RECEBER CPF
     // ====================================
-    if (conversation.returnFlow === 'AGUARDANDO_CPF') {
+   if (conversation.returnFlow === 'AGUARDANDO_CPF') {
 
-      const cpfLimpo = texto.replace(/\D/g, '');
+      // 1. Remove tudo que não for número
+      const documentoLimpo = texto.replace(/\D/g, '');
 
-      if (cpfLimpo.length !== 11) {
-        return 'Pode me informar um CPF válido?';
+      // 2. Verifica se tem tamanho de CPF (11) ou CNPJ (14)
+      if (documentoLimpo.length !== 11 && documentoLimpo.length !== 14) {
+        return 'Por favor, me informe um CPF (11 números) ou CNPJ (14 números) válido.';
       }
 
-      // 2. Transforma "05682018508" de volta em "056.820.185-08"
-      const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+      // 3. Aplica a máscara correta baseada na quantidade de caracteres digitados
+      let documentoFormatado = '';
+      if (documentoLimpo.length === 11) {
+        // Formata CPF: "056.820.185-08"
+        documentoFormatado = documentoLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+      } else {
+        // Formata CNPJ: "12.345.678/0001-99"
+        documentoFormatado = documentoLimpo.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
+      }
 
-      // 3. Busca no banco aceitando os dois formatos
+      // 4. Busca no banco aceitando os dois formatos (limpo ou formatado)
       const processos = await prisma.processo.findMany({
         where: {
           OR: [
-            { clienteCpf: cpfFormatado }, // Tenta achar com pontuação (Padrão atual do seu banco)
-            { clienteCpf: cpfLimpo }      // Tenta achar sem pontuação (Caso tenha algum salvo assim)
+            { clienteCpf: documentoFormatado }, // Tenta achar com pontuação (Padrão)
+            { clienteCpf: documentoLimpo }      // Tenta achar sem pontuação
           ],
           userId: conversation.userId,
           arquivado: false
@@ -1401,7 +1451,7 @@ Pode me contar o que aconteceu?`;
       });
 
       if (!processos.length) {
-        return 'Não encontrei processos vinculados a esse CPF.';
+        return 'Não encontrei processos vinculados a esse documento.';
       }
 
       // 👉 1 processo → responde direto
