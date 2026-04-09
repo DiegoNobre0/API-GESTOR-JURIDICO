@@ -88,6 +88,7 @@ model Processo {
   tipoHonorarios       String
   statusGeral          String @default("Triagem Inicial") // Mudado de "Contrato Fechado" para refletir a entrada via bot
   statusProtocolamento String @default("Pendente")
+  sistemaOrigem  String?
 
   // --- FINANCEIRO ---
   valorPrevistoIniciais Float   @default(0)

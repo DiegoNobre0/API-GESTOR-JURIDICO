@@ -1,5 +1,5 @@
 import { prisma } from '../../lib/prisma.js';
-import { ChatbotService } from '../../infra/services/chatbot-service.js';
+import { ChatbotService } from '../../infra/services/chatbot/chatbot-service.js';
 import { StorageService } from '../../infra/services/storage.service.js'; // <--- IMPORTANTE
 import axios from 'axios';
 import type { FastifyInstance } from 'fastify';

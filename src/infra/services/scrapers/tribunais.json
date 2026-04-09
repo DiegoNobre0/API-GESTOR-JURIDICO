@@ -1,0 +1,379 @@
+{
+    "PJe": {
+        "estadual": [
+            {
+                "tribunal": "TJAP",
+                "codigo": "8.03",
+                "urls": {
+                    "1g": "https://pje.tjap.jus.br/1g/ConsultaPublica/listView.seam",
+                    "2g": "https://pje.tjap.jus.br/2g/ConsultaPublica/listView.seam"
+                }
+            },
+            {
+                "tribunal": "TJBA",
+                "codigo": "8.05",
+                "urls": {
+                    "1g": "https://pje.tjba.jus.br/pje/ConsultaPublica/listView.seam",
+                    "2g": "https://pje2g.tjba.jus.br/pje/ConsultaPublica/listView.seamm"
+                }
+            },
+            {
+                "tribunal": "TJCE",
+                "codigo": "8.06",
+                "urls": {
+                    "1g": "https://pje-consulta.tjce.jus.br/pje1grau/ConsultaPublica/listView.seam",
+                    "2g": "https://pje-consulta.tjce.jus.br/pje2grau/ConsultaPublica/listView.seam"
+                }
+            },
+            {
+                "tribunal": "TJDFT",
+                "codigo": "8.07",
+                "urls": {
+                    "1g": "https://pje-consultapublica.tjdft.jus.br/",
+                    "2g": "https://pje2i-consultapublica.tjdft.jus.br/"
+                }
+            },
+            {
+                "tribunal": "TJMA",
+                "codigo": "8.10",
+                "urls": {
+                    "1g": "https://pje.tjma.jus.br/pje/ConsultaPublica/listView.seam",
+                    "2g": "https://pje2.tjma.jus.br/pje2g/ConsultaPublica/listView.seam"
+                }
+            },
+            {
+                "tribunal": "TJMG",
+                "codigo": "8.13",
+                "url": "https://pje-consulta-publica.tjmg.jus.br/pje/ConsultaPublica/listView.seam"
+            },
+            {
+                "tribunal": "TJMT",
+                "codigo": "8.11",
+                "url": "https://consultaprocessual.tjmt.jus.br/"
+            },
+            {
+                "tribunal": "TJPA",
+                "codigo": "8.14",
+                "url": "https://consultas.tjpa.jus.br/consultaunificada/consulta/principal"
+            },
+            {
+                "tribunal": "TJPB",
+                "codigo": "8.15",
+                "urls": {
+                    "1g": "https://consultapublica.tjpb.jus.br/pje/ConsultaPublica/listView.seam",
+                    "2g": "https://pje2.tjma.jus.br/pje2g/ConsultaPublica/listView.seam"
+                }
+            },
+            {
+                "tribunal": "TJPE",
+                "codigo": "8.17",
+                "urls": {
+                    "1g": "https://pje.cloud.tjpe.jus.br/1g/ConsultaPublica/listView.seam",
+                    "2g": "https://pje.cloud.tjpe.jus.br/2g/ConsultaPublica/listView.seam"
+                }
+            },
+            {
+                "tribunal": "TJRJ",
+                "codigo": "8.19",
+                "url": "https://tjrj.pje.jus.br/1g/ConsultaPublica/listView.seam"
+            },
+            {
+                "tribunal": "TJRN",
+                "codigo": "8.20",
+                "urls": {
+                    "1g": "https://pje1gconsulta.tjrn.jus.br/consultapublica/ConsultaPublica/listView.seam",
+                    "2g": "https://pje2gconsulta.tjrn.jus.br/consultapublica/ConsultaPublica/listView.seam"
+                }
+            },
+            {
+                "tribunal": "TJRO",
+                "codigo": "8.22",
+                "urls": {
+                    "1g": "https://pjepg-consulta.tjro.jus.br/consulta/ConsultaPublica/listView.seam",
+                    "2g": "https://pjesg-consulta.tjro.jus.br/consulta/ConsultaPublica/listView.seam"
+                }
+            }
+        ],
+        "federal": [
+            {
+                "tribunal": "TRF1",
+                "codigo": "4.01",
+                "urls": {
+                    "1g": "https://pje1g.trf1.jus.br/pje/ConsultaPublica/listView.seam",
+                    "2g": "https://pje2g.trf1.jus.br/pje/ConsultaPublica/listView.seam"
+                }
+            },
+            {
+                "tribunal": "TRF2",
+                "codigo": "4.04",
+                "url": "https://eproc-consulta.trf2.jus.br/eproc/externo_controlador.php?acao=processo_consulta_publica"
+            },
+            {
+                "tribunal": "TRF3",
+                "codigo": "4.03",
+                "urls": {
+                    "1g": "https://pje1g.trf3.jus.br/pje/ConsultaPublica/listView.seam",
+                    "2g": "https://pje2g.trf3.jus.br/pje/ConsultaPublica/listView.seam"
+                }
+            },           
+            {
+                "tribunal": "TRF5",
+                "codigo": "4.05",
+                "url": "https://cp.trf5.jus.br/cp/"
+            },
+            {
+                "tribunal": "TRF6",
+                "codigo": "4.06",
+                "urls": {
+                    "1g": "https://pje1g.trf6.jus.br/pje/ConsultaPublica/listView.seam",
+                    "2g": "https://pje2g.trf6.jus.br/pje/ConsultaPublica/listView.seam"
+                }
+            }
+        ],
+        "trabalhista": [
+            {
+                "tribunal": "TRT1",
+                "codigo": "5.01",
+                "url": "https://pje.trt1.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT2",
+                "codigo": "5.02",
+                "url": "https://pje.trt2.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT3",
+                "codigo": "5.03",
+                "url": "https://pje.trt3.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT4",
+                "codigo": "5.04",
+                "url": "https://pje.trt4.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT5",
+                "codigo": "5.05",
+                "url": "https://pje.trt5.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT6",
+                "codigo": "5.06",
+                "url": "https://pje.trt6.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT7",
+                "codigo": "5.07",
+                "url": "https://pje.trt7.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT8",
+                "codigo": "5.08",
+                "url": "https://pje.trt8.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT9",
+                "codigo": "5.09",
+                "url": "https://pje.trt9.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT10",
+                "codigo": "5.10",
+                "url": "https://pje.trt10.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT11",
+                "codigo": "5.11",
+                "url": "https://pje.trt11.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT12",
+                "codigo": "5.12",
+                "url": "https://pje.trt12.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT13",
+                "codigo": "5.13",
+                "url": "https://pje.trt13.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT14",
+                "codigo": "5.14",
+                "url": "https://pje.trt14.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT15",
+                "codigo": "5.15",
+                "url": "https://pje.trt15.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT16",
+                "codigo": "5.16",
+                "url": "https://pje.trt16.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT17",
+                "codigo": "5.17",
+                "url": "https://pje.trt17.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT18",
+                "codigo": "5.18",
+                "url": "https://pje.trt18.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT19",
+                "codigo": "5.19",
+                "url": "https://pje.trt19.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT20",
+                "codigo": "5.20",
+                "url": "https://pje.trt20.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT21",
+                "codigo": "5.21",
+                "url": "https://pje.trt21.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT22",
+                "codigo": "5.22",
+                "url": "https://pje.trt22.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT23",
+                "codigo": "5.23",
+                "url": "https://pje.trt23.jus.br/consultaprocessual/"
+            },
+            {
+                "tribunal": "TRT24",
+                "codigo": "5.24",
+                "url": "https://pje.trt24.jus.br/consultaprocessual/"
+            }
+        ]
+    },
+    "Projudi": {
+        "estadual": [
+            {
+                "tribunal": "TJBA",
+                "codigo": "8.05",
+                "url": "https://projudi.tjba.jus.br/projudi/"
+            },
+            {
+                "tribunal": "TJES",
+                "codigo": "8.08",
+                "url": "https://projudi.tjpi.jus.br/projudi/publico/buscas/ProcessosParte?publico=true"
+            },
+            {
+                "tribunal": "TJGO",
+                "codigo": "8.09",
+                "url": "https://projudi.tjgo.jus.br/BuscaProcesso?PaginaAtual=4"
+            },
+            {
+                "tribunal": "TJPI",
+                "codigo": "8.18",
+                "url": "https://projudi.tjpi.jus.br/projudi/publico/buscas/ProcessosParte?publico=true"
+            },
+            {
+                "tribunal": "TJPR",
+                "codigo": "8.16",
+                "url": "https://consulta.tjpr.jus.br/projudi_consulta/"
+            },
+            {
+                "tribunal": "TJRR",
+                "codigo": "8.23",
+                "url": "https://consultaprojudi.tjrr.jus.br/app/consulta"
+            }
+        ]
+    },
+    "eSAJ": {
+        "estadual": [
+            {
+                "tribunal": "TJAC",
+                "codigo": "8.01",
+                "urls": {
+                    "1g": "https://esaj.tjac.jus.br/cpopg/open.do",
+                    "2g": "https://esaj.tjac.jus.br/cposg/open.do"
+                }
+            },
+            {
+                "tribunal": "TJAL",
+                "codigo": "8.02",
+                "urls": {
+                    "1g": "https://www2.tjal.jus.br/cpopg/open.do",
+                    "2g": "https://www2.tjal.jus.br/cposg5/open.do"
+                }
+            },
+            {
+                "tribunal": "TJAM",
+                "codigo": "8.04",
+                "urls": {
+                    "1g": "https://consultasaj.tjam.jus.br/cpopg/open.do",
+                    "2g": "https://consultasaj.tjam.jus.br/cposgcr/open.do"
+                }
+            },
+            {
+                "tribunal": "TJCE",
+                "codigo": "8.06",
+                "urls": {
+                    "1g": "https://esaj.tjce.jus.br/cpopg/open.do",
+                    "2g": "https://esaj.tjce.jus.br/cposg5/open.do"
+                }
+            },
+            {
+                "tribunal": "TJMS",
+                "codigo": "8.12",
+                "urls": {
+                    "1g": "https://esaj.tjms.jus.br/cpopg5/open.do",
+                    "2g": "https://esaj.tjms.jus.br/cposg5/open.do"
+                }
+            },
+            {
+                "tribunal": "TJSP",
+                "codigo": "8.26",
+                "url": "https://esaj.tjsp.jus.br/cpopg/open.do"
+            }
+        ]
+    },
+    "eproc": {
+        "estadual": [
+            {
+                "tribunal": "TJPR",
+                "codigo": "8.16",
+                "urls": {
+                    "1g": "https://eproc1g.tjpr.jus.br/eproc/externo_controlador.php?acao=processo_consulta_publica",
+                    "2g": "https://eproc1g.tjpr.jus.br/eproc/externo_controlador.php?acao=processo_consulta_publica"
+                }
+            },
+            {
+                "tribunal": "TJRS",
+                "codigo": "8.21",
+                "url": "https://www.tjrs.jus.br/novo/busca/?return=proc&client=wp_index"
+            },
+            {
+                "tribunal": "TJSC",
+                "codigo": "8.24",
+                "urls": {
+                    "1g": "https://eprocwebcon.tjsc.jus.br/consulta1g/externo_controlador.php?acao=processo_consulta_publica",
+                    "2g": "https://eprocwebcon.tjsc.jus.br/consulta2g/externo_controlador.php?acao=processo_consulta_publica"
+                }
+            },
+            {
+                "tribunal": "TJSE",
+                "codigo": "8.25",
+                "urls": {
+                    "1g": "https://eproc1g-down.tjse.jus.br/eproc/externo_controlador.php?acao=processo_consulta_publica",
+                    "2g": "https://eproc2g-down.tjse.jus.br/eproc/externo_controlador.php?acao=processo_consulta_publica"
+                }
+            }
+        ],
+        "federal": [
+            {
+                "tribunal": "TRF4",
+                "codigo": "4.04",
+                "url": "https://consulta.trf4.jus.br/trf4/controlador.php?acao=consulta_processual_pesquisa"
+            }
+        ]
+    }
+}

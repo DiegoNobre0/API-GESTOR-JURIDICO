@@ -1,0 +1,258 @@
+{
+  "PJe": {
+    "TJAP": {
+      "1g": [
+        {
+          "numero": "0019623-64.2023.8.03.0001",
+          "url": "https://pje.tjap.jus.br/1g/ConsultaPublica/listView.seam"
+        },
+        {
+          "numero": "0038843-82.2022.8.03.0001",
+          "url": "https://pje.tjap.jus.br/1g/ConsultaPublica/listView.seam"
+        }
+      ]
+    },
+    "TJBA": {
+      "1g": [
+        {
+          "numero": "8066492-14.2023.8.05.0001",
+          "url": "https://pje.tjba.jus.br/pje/ConsultaPublica/listView.seam"
+        },
+        {
+          "numero": "8122348-94.2022.8.05.0001",
+          "url": "https://pje.tjba.jus.br/pje/ConsultaPublica/listView.seam"
+        }
+      ]
+    },
+    "TJCE": {
+      "1g": [
+        {
+          "numero": "0278132-76.2022.8.06.0001",
+          "url": "https://pje-consulta.tjce.jus.br/pje1grau/ConsultaPublica/listView.seam"
+        }
+      ]
+    },
+    "TJMA": {
+      "1g": [
+        {
+          "numero": "0812345-67.2023.8.10.0001",
+          "url": "https://pje.tjma.jus.br/pje/ConsultaPublica/listView.seam"
+        }
+      ]
+    },
+    "TJMG": {
+      "1g": [
+        {
+          "numero": "5193820-81.2023.8.13.0024",
+          "url": "https://pje-consulta-publica.tjmg.jus.br/pje/ConsultaPublica/listView.seam"
+        },
+        {
+          "numero": "5100961-80.2022.8.13.0024",
+          "url": "https://pje-consulta-publica.tjmg.jus.br/pje/ConsultaPublica/listView.seam"
+        }
+      ]
+    },
+    "TJMT": {
+      "1g": [
+        {
+          "numero": "1001234-56.2023.8.11.0041",
+          "url": "https://consultaprocessual.tjmt.jus.br/"
+        }
+      ]
+    },
+    "TJPA": {
+      "1g": [
+        {
+          "numero": "0812345-67.2023.8.14.0301",
+          "url": "https://consultas.tjpa.jus.br/consultaunificada/consulta/principal"
+        }
+      ]
+    },
+    "TJPB": {
+      "1g": [
+        {
+          "numero": "0812345-67.2023.8.15.2001",
+          "url": "https://consultapublica.tjpb.jus.br/pje/ConsultaPublica/listView.seam"
+        }
+      ]
+    },
+    "TJPE": {
+      "1g": [
+        {
+          "numero": "0012345-67.2023.8.17.2001",
+          "url": "https://pje.cloud.tjpe.jus.br/1g/ConsultaPublica/listView.seam"
+        }
+      ]
+    },
+    "TJRJ": {
+      "1g": [
+        {
+          "numero": "0105646-84.2006.8.19.0001",
+          "url": "https://tjrj.pje.jus.br/1g/ConsultaPublica/listView.seam"
+        },
+        {
+          "numero": "0083672-29.2022.8.19.0001",
+          "url": "https://tjrj.pje.jus.br/1g/ConsultaPublica/listView.seam"
+        }
+      ]
+    },
+    "TJRN": {
+      "1g": [
+        {
+          "numero": "0812345-67.2023.8.20.5001",
+          "url": "https://pje1gconsulta.tjrn.jus.br/consultapublica/ConsultaPublica/listView.seam"
+        }
+      ]
+    },
+    "TJRO": {
+      "1g": [
+        {
+          "numero": "7012345-67.2023.8.22.0001",
+          "url": "https://pjepg-consulta.tjro.jus.br/consulta/ConsultaPublica/listView.seam"
+        }
+      ]
+    },
+    "TRF1": {
+      "1g": [
+        {
+          "numero": "0029334-69.2018.4.01.3400",
+          "url": "https://pje1g.trf1.jus.br/pje/ConsultaPublica/listView.seam"
+        },
+        {
+          "numero": "0014603-44.2013.4.01.3400",
+          "url": "https://pje1g.trf1.jus.br/pje/ConsultaPublica/listView.seam"
+        }
+      ]
+    },
+    "TRF3": {
+      "1g": [
+        {
+          "numero": "5012345-67.2023.4.03.6100",
+          "url": "https://pje1g.trf3.jus.br/pje/ConsultaPublica/listView.seam"
+        }
+      ]
+    },
+    "TRF6": {
+      "1g": [
+        {
+          "numero": "1012345-67.2023.4.06.3800",
+          "url": "https://pje1g.trf6.jus.br/consultapublica/ConsultaPublica/listView.seam"
+        }
+      ]
+    }
+  },
+  "Projudi": {
+    "TJBA": {
+      "1g": [
+        {
+          "numero": "0011073-43.2026.8.05.0001",
+          "url": "https://projudi.tjba.jus.br/projudi/"
+        }
+      ]
+    },
+    "TJGO": {
+      "1g": [
+        {
+          "numero": "5012345-67.2023.8.09.0051",
+          "url": "https://projudi.tjgo.jus.br/BuscaProcesso?PaginaAtual=4"
+        }
+      ]
+    },
+    "TJPI": {
+      "1g": [
+        {
+          "numero": "0812345-67.2023.8.18.0140",
+          "url": "https://projudi.tjpi.jus.br/projudi/publico/buscas/ProcessosParte?publico=true"
+        }
+      ]
+    },
+    "TJRR": {
+      "1g": [
+        {
+          "numero": "0812345-67.2023.8.23.0010",
+          "url": "https://consultaprojudi.tjrr.jus.br/app/consulta"
+        }
+      ]
+    }
+  },
+  "Eproc": {
+    "TJSC": {
+      "1g": [
+        {
+          "numero": "5026766-92.2020.8.24.0023",
+          "url": "https://eprocwebcon.tjsc.jus.br/consulta1g/externo_controlador.php?acao=processo_consulta_publica"
+        }
+      ]
+    },
+    "TRF2": {
+      "1g": [
+        {
+          "numero": "5012345-67.2023.4.02.5101",
+          "url": "https://eproc-consulta.trf2.jus.br/eproc/externo_controlador.php?acao=processo_consulta_publica"
+        }
+      ]
+    }
+  },
+  "eSAJ": {
+    "TJSP": {
+      "1g": [
+        {
+          "numero": "1004533-30.2017.8.26.0053",
+          "url": "https://esaj.tjsp.jus.br/cpopg/open.do"
+        },
+        {
+          "numero": "1029095-59.2017.8.26.0100",
+          "url": "https://esaj.tjsp.jus.br/cpopg/open.do"
+        }
+      ]
+    },
+    "TJMS": {
+      "1g": [
+        {
+          "numero": "0927482-45.2024.8.12.0001",
+          "url": "https://esaj.tjms.jus.br/cpopg5/open.do"
+        }
+      ]
+    },
+    "TJCE": {
+      "1g": [
+        {
+          "numero": "0278063-44.2022.8.06.0001",
+          "url": "https://esaj.tjce.jus.br/cpopg/open.do"
+        }
+      ]
+    },
+    "TJAL": {
+      "1g": [
+        {
+          "numero": "0744037-66.2025.8.02.0001",
+          "url": "https://www2.tjal.jus.br/cpopg/open.do"
+        },
+        {
+          "numero": "0733436-35.2024.8.02.0001",
+          "url": "https://www2.tjal.jus.br/cpopg/open.do"
+        }
+      ]
+    },
+    "TJAM": {
+      "1g": [
+        {
+          "numero": "0630055-40.2013.8.04.0001",
+          "url": "https://consultasaj.tjam.jus.br/cpopg/open.do"
+        }
+      ]
+    },
+    "TJAC": {
+      "1g": [
+        {
+          "numero": "0702941-98.2025.8.01.0001",
+          "url": "https://esaj.tjac.jus.br/cpopg/open.do"
+        },
+        {
+          "numero": "0714425-47.2024.8.01.0001",
+          "url": "https://esaj.tjac.jus.br/cpopg/open.do"
+        }
+      ]
+    }
+  }
+}

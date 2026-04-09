@@ -4,7 +4,7 @@ import { prisma } from '../../lib/prisma.js'; // Ajuste o caminho conforme seu p
 import type { Conversation } from '@prisma/client'; // Opcional: para tipagem
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { StorageService } from '../services/storage.service.js';
-import { ChatbotService } from '../services/chatbot-service.js';
+import { ChatbotService } from '../services/chatbot/chatbot-service.js';
 
 export class WebhookController {
   private storage: StorageService;

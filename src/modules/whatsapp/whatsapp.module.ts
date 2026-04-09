@@ -1,6 +1,6 @@
 
 
-import { ChatbotService } from "../../infra/services/chatbot-service.js";
+import { ChatbotService } from "../../infra/services/chatbot/chatbot-service.js";
 import { WhatsappService } from "./whatsapp.service.js";
 import { WhatsappController } from "./whatsapp.controller.js";
 import type { FastifyInstance } from "fastify";
