@@ -8,9 +8,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { BaseScraper } from './base.scraper.js';
 
-const _filename = typeof __filename !== 'undefined' 
-  ? __filename 
-  : fileURLToPath(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // ── Tipos do dados.json ───────────────────────────────────────────────────────
