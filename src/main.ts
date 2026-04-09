@@ -105,6 +105,8 @@ async function start() {
       });
     });
 
+    await app.ready();
+
     await app.listen({ port: 3333, host: '0.0.0.0' });
     console.log("🚀 Nobre Gestão Jurídica rodando com Socket na porta 3333");
 
