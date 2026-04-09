@@ -12,7 +12,7 @@ export async function whatsappModule(app: FastifyInstance) {
   
   const whatsappService = new WhatsappService(app, chatbotService);
   const whatsappController = new WhatsappController(whatsappService);
-
+console.log('🔥 WHATSAPP MODULE CARREGADO');
   // --- Rotas Públicas (Meta) ---
   app.get('/whatsapp/webhook', (req, rep) => whatsappController.verifyWebhook(req, rep));
   app.post('/whatsapp/webhook', (req, rep) => whatsappController.handleWebhook(req, rep));
