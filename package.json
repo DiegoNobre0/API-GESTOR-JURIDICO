@@ -5,12 +5,13 @@
   "main": "index.js",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "build": "tsup src/main.ts --format esm --clean --dts",
+    "build": "tsup src/main.ts --format esm --clean --no-dts --external dotenv --external dotenv/config --external puppeteer --external @prisma/client",
     "start": "node dist/main.js",
     "prisma:generate": "prisma generate",
     "prisma:db-push": "prisma db push",
     "lint": "tsc --noEmit",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "postbuild": "find src -name '*.json' -exec cp {} dist/ \\;"
   },
   "keywords": [],
   "author": "",

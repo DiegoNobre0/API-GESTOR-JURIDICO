@@ -58,7 +58,7 @@ export class BaseScraper {
       }
 
       BaseScraper.browserInstance = await puppeteer.launch({
-        headless: false,
+        headless: true,
         args,
         defaultViewport: { width: 1280, height: 800 },
         protocolTimeout: 360000,
