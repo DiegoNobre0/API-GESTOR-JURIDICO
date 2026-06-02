@@ -77,7 +77,7 @@ export function gerarMensagemDocsExtras(tipoCaso: TipoCaso): string {
 Perfeito, agora você pode enviar qualquer outra prova que considere importante.
 
 Pode ser foto, vídeo, áudio, PDF ou print.
-Quando terminar, é só digitar *FINALIZAR*.
+
 `.trim();
   }
 
@@ -90,6 +90,5 @@ Costuma ajudar bastante:
 ${itens}
 
 Pode enviar fotos, PDFs, áudios ou vídeos.
-Quando terminar, é só digitar *FINALIZAR*.
 `.trim();
 }
