@@ -57,11 +57,20 @@ export class BaseScraper {
         console.log(`🌐 [Proxy] Navegador iniciado com rede configurada: ${proxyIp}:${proxyPort}`);
       }
 
+      // No método getBrowser():
       BaseScraper.browserInstance = await puppeteer.launch({
-        headless: true,
-        //headless: false,
-        args,
-        defaultViewport: { width: 1280, height: 800 },
+        // Use 'false' para forçar o modo gráfico (que o Xvfb vai capturar)
+        // O TypeScript aceitará 'false' sem reclamar.
+        headless: false,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-blink-features=AutomationControlled',
+          '--disable-dev-shm-usage',
+          '--window-size=1920,1080',
+          '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        ],
+        defaultViewport: null,
         protocolTimeout: 360000,
       });
     }
@@ -78,16 +87,21 @@ export class BaseScraper {
   }
 
   // 💉 MÉTODO PARA AUTENTICAR A ABA DO NAVEGADOR
-protected async autenticarProxy(page: any) {
-  const proxyBase = process.env.PROXY_USUARIO;  // base sem timestamp
-  const proxyPass = process.env.PROXY_SENHA;
+  protected async autenticarProxy(page: any) {
+    const proxyBase = process.env.PROXY_USUARIO;  // base sem timestamp
+    const proxyPass = process.env.PROXY_SENHA;
 
-  // ✅ Gera uma sessão única por aba com timestamp — igual ao que funcionava antes
-  const sessionId = `${proxyBase}-session-${Date.now()}-sessTime-15`;
+    // ✅ Gera uma sessão única por aba com timestamp — igual ao que funcionava antes
+    const sessionId = `${proxyBase}-session-${Date.now()}-sessTime-15`;
 
-  await page.authenticate({ username: sessionId, password: proxyPass });
-  console.log(`🌐 [Proxy] Puppeteer usando a sessão: ${sessionId}`);
-}
+    await page.authenticate({ username: sessionId, password: proxyPass });
+
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    });
+
+    console.log(`🌐 [Proxy] Puppeteer usando a sessão: ${sessionId}`);
+  }
 
   protected async processarCaptcha(buffer: Buffer): Promise<string> {
     try {
