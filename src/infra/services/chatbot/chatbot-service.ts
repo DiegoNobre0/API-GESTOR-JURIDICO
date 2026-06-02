@@ -1706,6 +1706,37 @@ export class ChatbotService {
       return '♻️ *Histórico resetado!* Seus dados e documentos foram apagados. Você já pode enviar um \'Oi\' para iniciar um novo teste.';
     }
 
+    if (texto.includes('BTN_FINALIZAR_PROVAS') || texto.toUpperCase().includes('FINALIZAR')) {
+      if (conversation.workflowStep === 'COLETA_DOCS_EXTRA') {
+        let tipoCaso = (conversation.tipoCaso as TipoCaso) ?? 'GERAL';
+        
+        await prisma.conversation.update({ 
+          where: { customerPhone }, 
+          data: { workflowStep: 'ASSINATURA', fallbackStage: 0 } 
+        });
+
+        if (tipoCaso === 'GERAL') {
+          await this.notificationService.notificarAdvogado('CASO_ESPECIFICO', conversation);
+          return `Perfeito! Recebemos todas as provas. ✅\n\nNossa equipe jurídica já foi notificada para fazer uma análise inicial e vai gerar um *contrato e procuração totalmente personalizados* para você.\n\nEm breve, um de nossos advogados vai te chamar por aqui com os documentos para assinatura!`;
+        }
+
+        const links = LINKS_ASSINATURA[tipoCaso] || LINKS_ASSINATURA['GERAL'];
+        return `Perfeito! Recebemos todas as provas. ✅\n\nAgora só precisamos da sua assinatura digital para iniciar a análise do seu caso.\n\n📄 *Contrato:*\n${links.contrato}\n\n🖊️ *Procuração:*\n${links.procuracao}\n\nLeva menos de 2 minutos 😉\n\nAssim que finalizar, clique no botão abaixo para me avisar.`;
+      }
+    }
+
+    // NOVO INTERCEPTADOR: Clique no botão de Assinatura Concluída
+    if (texto.includes('BTN_ASSINATURA_OK') || this.detectAssinaturaConcluida(texto)) {
+      if (conversation.workflowStep === 'ASSINATURA') {
+        await prisma.conversation.update({ 
+          where: { customerPhone }, 
+          data: { workflowStep: 'FINALIZADO' } 
+        });
+        await this.notificationService.notificarAdvogado('ASSINOU', conversation);
+        return `Perfeito! Recebi sua confirmação 🙌\n\nNossa equipe jurídica já foi notificada e dará continuidade na análise do seu caso.\n\nEm breve você receberá atualizações.`;
+      }
+    }
+
     if (texto.toLowerCase().startsWith('/dados')) {
       return this.handleComandoDados(texto, customerPhone);
     }

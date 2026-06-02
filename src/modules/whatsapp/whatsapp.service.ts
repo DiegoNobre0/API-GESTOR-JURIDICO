@@ -7,7 +7,9 @@ import type { IncomingMessage, MetaMessagePayload } from './whatsapp.types.js';
 import { DocumentAnalysisService } from '../../infra/services/document-analysis.service.js';
 import { normalizarTipoDocumento } from '../../infra/services/utils/documentos.js';
 import OpenAI, { toFile } from "openai";
-import { Readable } from "stream";
+
+import { WhatsappQueue } from '@/infra/queues/whatsapp.queue.js';
+import { redis } from '@/infra/redis/redis.js';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -22,89 +24,107 @@ export class WhatsappService {
 
 
   constructor(
-    private app: FastifyInstance,
+    public app: FastifyInstance,
     private chatbotService: ChatbotService
   ) {
     this.storageService = new StorageService();
     this.docAnalysisService = new DocumentAnalysisService();
   }
+ 
 
-  // ===========================================================================
-  // 1. WEBHOOK (O CORAÇÃO DA MUDANÇA)
-  // ===========================================================================
+async processWebhook(body: any) {
+    const entry = body.entry?.[0];
+    const changes = entry?.changes?.[0];
+    const value = changes?.value;
+    const message = value?.messages?.[0];
+    const statusesData = value?.statuses?.[0]; // Recibos de leitura/entrega da Meta
 
-  // ===========================================================================
-  // 1. WEBHOOK (CORREÇÃO DE FLUXO)
-  // ===========================================================================
+    // 1. Ignora eventos de status de leitura/entrega por enquanto
+    if (statusesData) return;
+    if (!message) return; 
 
-  async processWebhook(body: any) {
-    console.log('🔥 WEBHOOK BODY:', JSON.stringify(body, null, 2));
-    const changes = body.entry?.[0]?.changes?.[0];
-    if (!changes) return;
+    // 2. Extrai dados básicos
+    const customerPhone = message.from;
+    // 👇 CORREÇÃO: Mudamos de contactName para customerName aqui
+    const customerName = value.contacts?.[0]?.profile?.name || 'Cliente WhatsApp';
 
-    const value = changes.value;
-    const message = value.messages?.[0] as IncomingMessage;
-    const contactName = value.contacts?.[0]?.profile?.name || 'Cliente WhatsApp';
+    // 3. Deduplicação Atômica no Redis (Proteção contra Double-Texting da Meta)
+    // Cria uma chave única com o ID da mensagem que expira em 5 minutos
+    const dedupeKey = `webhook_dedupe:${message.id}`;
+    const isNewMessage = await redis.set(dedupeKey, '1', 'EX', 300, 'NX');
+    
+    if (!isNewMessage) {
+      console.log(`[Webhook] ⚠️ Mensagem duplicada ignorada pelo Redis: ${message.id}`);
+      return;
+    }
 
-    if (message) {
-      // 1. Marca como Lido (Feedback visual)
-      await this.markAsRead(message.id);
+    // 4. Marca como Lido (Feedback visual rápido no celular do cliente)
+    // Como é uma chamada de rede simples, podemos manter no webhook (sem `await` travando o fluxo se não quiser)
+    this.markAsRead(message.id).catch(e => console.warn('Erro ao marcar lido', e.message));
 
-      // 2. Encontra ou Cria a Conversa
-      const conversation = await this.findOrCreateConversation(message.from, contactName);
+    // 👇 CORREÇÃO: Atualizado aqui também
+    console.log(`📥 [Webhook] Mensagem recebida de ${customerName}. Enviando para a fila...`);
 
-      // 3. DETECÇÃO DE MÍDIA (AQUI ESTÁ A CORREÇÃO)
-      const mediaTypes = ['image', 'document', 'audio', 'voice', 'ptt', 'video'];
-      const isMedia = mediaTypes.includes(message.type);
+    // 5. Joga todo o payload na fila do BullMQ e encerra a requisição na hora!
+    await WhatsappQueue.add('process-chat-message', {
+      messageData: message,
+      customerPhone,
+      customerName // ✅ Agora sim, ele encontra a variável!
+    });
+  }
 
-      if (isMedia) {
-        console.log(`📥 Mídia detectada de ${contactName}. Iniciando processamento...`);
 
-        // CHAMA O HANDLER E ENCERRA A EXECUÇÃO AQUI
-        // Isso impede que o código desça e mande "[Desconhecido]" para a IA
-        await this.handleIncomingMedia(message, conversation);
-        return;
+  // Adicione dentro de WhatsappService (sistema do advogado)
+  async sendInteractiveTextMessage(to: string, bodyText: string, buttons: { id: string; title: string }[], conversationId?: string) {
+    if (!this.token || !process.env.WHATSAPP_PHONE_NUMBER_ID) return;
+
+    const safeButtons = buttons.map(btn => ({
+      type: 'reply',
+      reply: {
+        id: btn.id.substring(0, 256),
+        title: btn.title.substring(0, 20),
       }
+    }));
 
-      // --- DAQUI PARA BAIXO É SÓ PARA TEXTO ---
-
-      // Se chegou aqui, garantimos que é texto ou audio/outro
-      // Se for desconhecido (ex: sticker), ignoramos para não confundir a IA
-      if (message.type !== 'text') {
-        console.log(`⚠️ Tipo de mensagem ignorado: ${message.type}`);
-        return;
+    const payload: any = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: to,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: bodyText.substring(0, 1024) },
+        action: { buttons: safeButtons }
       }
+    };
 
-      const content = message.text?.body || '';
+    try {
+      const metaResponse: any = await this.callMetaApi('/messages', 'POST', payload);
 
-      if (!content) return; // Se não tem texto, não faz nada
+      if (!metaResponse.error && conversationId) {
+        // Loga a mensagem enviada no banco para aparecer no frontend
+        const savedMessage = await prisma.message.create({
+          data: {
+            wa_id: metaResponse.messages?.[0]?.id,
+            content: bodyText,
+            role: 'AGENT',
+            type: 'text',
+            status: 'sent',
+            conversationId: conversationId
+          }
+        });
 
-      // 4. Salva Mensagem de TEXTO no Banco
-      const savedMessage = await prisma.message.create({
-        data: {
-          wa_id: message.id,
-          content: content,
-          role: 'USER',
-          type: 'text',
-          status: 'read',
-          conversationId: conversation.id,
-        }
-      });
+        await prisma.conversation.update({
+          where: { id: conversationId },
+          data: { lastMessageBody: '[Botões Interativos Enviados]', lastMessageTime: new Date() }
+        });
 
-      await this.updateConversationStats(conversation.id, content);
-
-      // Emite Socket
-      this.app.io.emit('new_whatsapp_message', { ...savedMessage, conversationId: conversation.id });
-
-      // 5. IA Chatbot (Apenas se não tiver atendente humano)
-      if (!conversation.attendantId) {
-        const aiResponse: any = await this.chatbotService.chat(content, message.from);
-
-        // Envia a resposta da IA
-        if (aiResponse) {
-          await this.sendText(message.from, aiResponse, conversation.id);
-        }
+        this.app.io.emit('new_whatsapp_message', { ...savedMessage, conversationId });
       }
+    } catch (error) {
+      console.error('[WhatsApp Interactive Error]:', error);
+      // Fallback: Se der erro, manda como texto normal
+      await this.sendText(to, bodyText, conversationId);
     }
   }
 
@@ -118,6 +138,7 @@ export class WhatsappService {
       const workflowStep = conversation.workflowStep?.trim();
       const fasesDocs = ['COLETA_DOCS', 'COLETA_DOCS_EXTRA'];
       const estaEmFaseDeDocs = fasesDocs.includes(workflowStep);
+
 
       // ============================
       // UX – feedback imediato (Somente para imagens/pdfs)
@@ -229,7 +250,7 @@ export class WhatsappService {
         // Agora o código vai descer pro passo 4 e salvar o áudio nas provas.
       }
 
- // ============================
+      // ============================
       // 4. SALVAR A MÍDIA COMO PROVA (IMAGEM, PDF, VÍDEO E ÁUDIO)
       // ============================
       let tipoDocumento: any = 'COMPLEMENTAR';
@@ -252,10 +273,10 @@ export class WhatsappService {
         // 2️⃣ Mapeia o resultado da IA para a nomenclatura do seu Checklist
         if (analiseIA.tipo_identificado === 'RG') {
           tipoDocumento = 'RG';
-        } 
+        }
         else if (analiseIA.tipo_identificado === 'CNH') {
           tipoDocumento = 'CNH'; // Se o seu checklist aceita CNH no lugar do RG, pode por 'RG' aqui também
-        } 
+        }
         else if (analiseIA.tipo_identificado === 'COMPROVANTE_RESIDENCIA') {
           tipoDocumento = 'COMP_RES';
         }
@@ -383,9 +404,14 @@ export class WhatsappService {
       const pendentesAgora = await this.getDocumentosPendentes(conversation.id);
 
       if (workflowStep === 'COLETA_DOCS_EXTRA') {
-        await this.sendText(
+        // Em vez de texto simples, mandamos um botão para facilitar a vida do cliente
+        await this.sendInteractiveTextMessage(
           conversation.customerPhone,
-          'Mídia recebida! Pode continuar enviando provas ou digite *FINALIZAR*.',
+          'Mídia recebida e guardada no seu processo! 📎\n\nVocê tem mais alguma prova para enviar ou podemos seguir para a assinatura?',
+          [
+            { id: 'BTN_ENVIAR_MAIS', title: '📎 Enviar mais provas' },
+            { id: 'BTN_FINALIZAR_PROVAS', title: '🚀 Finalizar envio' }
+          ],
           conversation.id
         );
         return;
@@ -487,7 +513,7 @@ Diga que quando terminar, deve digitar FINALIZAR.`;
 
 
   // --- DOWNLOAD DA META (O PASSO QUE FALTAVA) ---
-  private async downloadMediaFromMeta(mediaId: string): Promise<Buffer> {
+  public async downloadMediaFromMeta(mediaId: string): Promise<Buffer> {
     // Passo A: Pegar a URL de download
     const urlRes = await fetch(`https://graph.facebook.com/${this.version}/${mediaId}`, {
       headers: { 'Authorization': `Bearer ${this.token}` }
@@ -523,7 +549,7 @@ Diga que quando terminar, deve digitar FINALIZAR.`;
 
   //   return checklistBase.filter(d => !recebidos.includes(d));
   // }
-  private async getDocumentosPendentes(conversationId: string) {
+  public async getDocumentosPendentes(conversationId: string) {
     const docs = await prisma.conversationDocument.findMany({
       where: {
         conversationId,
@@ -888,7 +914,7 @@ Diga que quando terminar, deve digitar FINALIZAR.`;
   }
 
 
- async markAsRead(messageId: string) {
+  async markAsRead(messageId: string) {
     try {
       await this.callMetaApi('/messages', 'POST', {
         messaging_product: 'whatsapp',

@@ -28,9 +28,19 @@ import { clientesRoutes } from './modules/cliente/clientes.module.js';
 import { financeiroModule } from './modules/financeiro/financeiro.module.js';
 import { agendaRoutes } from './modules/agenda/agenda.routes.js';
 import { verificarFallbacks } from './infra/workers/fallback.worker.js';
-import { fallbackModule } from './infra/workers/fallback.routes.js';
+import { WhatsappService } from './modules/whatsapp/whatsapp.service.js';
+import { ChatbotService } from './infra/services/chatbot/chatbot-service.js';
+import { initWhatsappWorker } from './infra/workers/whatsapp.worker.js';
+
 
 const app = Fastify({ logger: true });
+
+const chatbotService = new ChatbotService();
+
+// Depois você injeta a instância no WhatsappService
+const whatsappService = new WhatsappService(app, chatbotService);
+
+initWhatsappWorker(whatsappService);
 
 /* =======================================================
    1️⃣ PLUGINS
@@ -42,6 +52,8 @@ app.register(cors, {
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 });
+
+
 
 app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -64,7 +76,6 @@ app.register(leadsModule, { prefix: 'leads' });
 app.register(uploadRoutes);
 app.register(agendaRoutes);
 app.register(clientesRoutes, { prefix: 'clientes' });
-app.register(fallbackModule)
 
 /* =======================================================
    3️⃣ JOBS AGENDADOS (CRON)
