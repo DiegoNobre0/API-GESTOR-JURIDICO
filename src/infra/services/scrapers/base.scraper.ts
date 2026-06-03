@@ -27,28 +27,27 @@ export class BaseScraper {
   private static requisicoesFeitas = 0;
   private static MAX_REQUISICOES_POR_BROWSER = 50;
 
-  protected async getBrowser() {
+ protected async getBrowser() {
     if (BaseScraper.requisicoesFeitas >= BaseScraper.MAX_REQUISICOES_POR_BROWSER) {
       console.log('🔄 [Gerenciador] Limite atingido. Reiniciando browser para liberar RAM...');
-
       logMemoria('Antes de fechar o Browser');
-
       await BaseScraper.closeBrowser();
       BaseScraper.requisicoesFeitas = 0;
-
       logMemoria('Depois de fechar o Browser');
     }
 
     if (!BaseScraper.browserInstance || !BaseScraper.browserInstance.connected) {
+      // 1. Montamos o array de argumentos básico
       const args = [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-blink-features=AutomationControlled',
         '--disable-dev-shm-usage',
-        '--disable-popup-blocking'
+        '--window-size=1920,1080',
+        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       ];
 
-      // 💉 INJETANDO O PROXY NO CHROMIUM (IP e Porta) ATIVADO!
+      // 2. Injetamos o Proxy (se existir)
       const proxyIp = process.env.PROXY_IP;
       const proxyPort = process.env.PROXY_PORTA;
 
@@ -57,19 +56,10 @@ export class BaseScraper {
         console.log(`🌐 [Proxy] Navegador iniciado com rede configurada: ${proxyIp}:${proxyPort}`);
       }
 
-      // No método getBrowser():
+      // 3. O SEGREDO AQUI: Passamos a variável 'args' que já contém tudo!
       BaseScraper.browserInstance = await puppeteer.launch({
-        // Use 'false' para forçar o modo gráfico (que o Xvfb vai capturar)
-        // O TypeScript aceitará 'false' sem reclamar.
         headless: false,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-dev-shm-usage',
-          '--window-size=1920,1080',
-          '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        ],
+        args: args, // 👈 CORREÇÃO: Não recrie o array aqui. Use a variável 'args'.
         defaultViewport: null,
         protocolTimeout: 360000,
       });
