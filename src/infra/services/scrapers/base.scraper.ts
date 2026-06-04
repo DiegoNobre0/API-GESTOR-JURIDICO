@@ -56,10 +56,12 @@ export class BaseScraper {
         console.log(`🌐 [Proxy] Navegador iniciado com rede configurada: ${proxyIp}:${proxyPort}`);
       }
 
+      process.env.DISPLAY = ':99';
+
       // 3. O SEGREDO AQUI: Passamos a variável 'args' que já contém tudo!
       BaseScraper.browserInstance = await puppeteer.launch({
         headless: false,
-        args: args, // 👈 CORREÇÃO: Não recrie o array aqui. Use a variável 'args'.
+        args: args, 
         defaultViewport: null,
         protocolTimeout: 360000,
       });
