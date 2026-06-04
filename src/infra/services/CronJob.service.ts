@@ -264,7 +264,7 @@ export class CronJobService {
 
         // 🚀 Aqui a mágica acontece: O Runner assume o trabalho pesado
         const resultado = await this.runner.processarLotesDoUsuario(usuario, usuario.processos);
-        console.log(`RESULTADO' ${resultado}`)
+        console.log('RESULTADO:', JSON.stringify(resultado, null, 2));
         if (resultado.houveNovidade && usuario.email) {
           console.log(`  📧 [EMAIL] Novidades encontradas. Enviando para ${usuario.email}...`);
           try {
