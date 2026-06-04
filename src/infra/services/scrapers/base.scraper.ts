@@ -51,7 +51,7 @@ export class BaseScraper {
       const proxyIp = process.env.PROXY_IP;
       const proxyPort = process.env.PROXY_PORTA;
 
-      if (proxyIp && proxyPort) {
+      if (false && proxyIp && proxyPort) {
         args.push(`--proxy-server=http://${proxyIp}:${proxyPort}`);
         console.log(`🌐 [Proxy] Navegador iniciado com rede configurada: ${proxyIp}:${proxyPort}`);
       }
