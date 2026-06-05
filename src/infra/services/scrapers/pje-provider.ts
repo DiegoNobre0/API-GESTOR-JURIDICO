@@ -26,383 +26,388 @@ const obterTribunalPorCNJ = (cnj: string): string => {
 };
 
 export interface PjeMovimentacao {
-  titulo: string;
-  descricao: string;
-  data: string;
-  codigo: number;
+  titulo: string;
+  descricao: string;
+  data: string;
+  codigo: number;
 }
 
 export interface PjeResultado {
-  numeroProcesso: string;
-  tribunal: string;
-  orgaoJulgador: string;
-  movimentacoes: PjeMovimentacao[];
-  fonte: 'PJe';
+  numeroProcesso: string;
+  tribunal: string;
+  orgaoJulgador: string;
+  movimentacoes: PjeMovimentacao[];
+  fonte: 'PJe';
 }
 
 async function salvarHtmlDebug(page: Page, chave: string): Promise<string> {
-  const html = await page.content();
-  const caminho = path.join(os.tmpdir(), `pje-debug-${chave}-${Date.now()}.html`);
-  fs.writeFileSync(caminho, html, 'utf-8');
-  return caminho;
+  const html = await page.content();
+  const caminho = path.join(os.tmpdir(), `pje-debug-${chave}-${Date.now()}.html`);
+  fs.writeFileSync(caminho, html, 'utf-8');
+  const caminhoPrint = `/tmp/pje-debug-print-${Date.now()}.png`;
+  await page.screenshot({ path: caminhoPrint, fullPage: true });
+  console.log(`📸 Print da tela salvo em: ${caminhoPrint}`);
+  return caminho;
 }
 
 export class PJeProvider extends BaseScraper {
 
-  async consultar(numeroCNJ: string): Promise<PjeResultado | null> {
-    const chave = this.extrairChaveTribunal(numeroCNJ);
-    if (!chave || !PJE_URLS[chave]) {
-      console.error(`❌ [PJe] Tribunal ${chave} não suportado ou CNJ inválido.`);
-      return null;
-    }
-    return this.scrapeProcesso(numeroCNJ, PJE_URLS[chave], chave);
-  }
+  async consultar(numeroCNJ: string): Promise<PjeResultado | null> {
+    const chave = this.extrairChaveTribunal(numeroCNJ);
+    if (!chave || !PJE_URLS[chave]) {
+      console.error(`❌ [PJe] Tribunal ${chave} não suportado ou CNJ inválido.`);
+      return null;
+    }
+    return this.scrapeProcesso(numeroCNJ, PJE_URLS[chave], chave);
+  }
 
-  // Novo método para permitir a passagem de URL dinâmica via Roteador
-  async consultarComUrl(numeroCNJ: string, url: string, chave: string): Promise<PjeResultado | null> {
-    return this.scrapeProcesso(numeroCNJ, url, chave);
-  }
+  // Novo método para permitir a passagem de URL dinâmica via Roteador
+  async consultarComUrl(numeroCNJ: string, url: string, chave: string): Promise<PjeResultado | null> {
+    return this.scrapeProcesso(numeroCNJ, url, chave);
+  }
 
-  private extrairChaveTribunal(numeroCNJ: string): string | null {
-    const limpo = numeroCNJ.replace(/[^\d.]/g, '');
-    const match = limpo.match(/\d{7}-?\d{2}\.\d{4}\.(\d)\.(\d{2})\.\d{4}/);
-    return match ? `${match[1]}.${match[2]}` : null;
-  }
+  private extrairChaveTribunal(numeroCNJ: string): string | null {
+    const limpo = numeroCNJ.replace(/[^\d.]/g, '');
+    const match = limpo.match(/\d{7}-?\d{2}\.\d{4}\.(\d)\.(\d{2})\.\d{4}/);
+    return match ? `${match[1]}.${match[2]}` : null;
+  }
 
-  private async scrapeProcesso(
-    numeroCNJ: string,
-    url: string,
-    chave: string,
-  ): Promise<PjeResultado | null> {
+  private async scrapeProcesso(
+    numeroCNJ: string,
+    url: string,
+    chave: string,
+  ): Promise<PjeResultado | null> {
 
-    const MAX_TENTATIVAS_PROCESSO = 5;
+    const MAX_TENTATIVAS_PROCESSO = 5;
 
-    for (let tentativaProcesso = 1; tentativaProcesso <= MAX_TENTATIVAS_PROCESSO; tentativaProcesso++) {
+    for (let tentativaProcesso = 1; tentativaProcesso <= MAX_TENTATIVAS_PROCESSO; tentativaProcesso++) {
 
-      if (tentativaProcesso > 1) {
-        console.log(`\n🔄 [PJe ${chave}] REINICIANDO PROCESSO ${numeroCNJ} (Tentativa ${tentativaProcesso}/${MAX_TENTATIVAS_PROCESSO}) com novo IP...`);
-      }
+      if (tentativaProcesso > 1) {
+        console.log(`\n🔄 [PJe ${chave}] REINICIANDO PROCESSO ${numeroCNJ} (Tentativa ${tentativaProcesso}/${MAX_TENTATIVAS_PROCESSO}) com novo IP...`);
+      }
 
-      const browser = await this.getBrowser();
-      const page = await browser.newPage();
+      const browser = await this.getBrowser();
+      const page = await browser.newPage();
 
-      try {
-        await this.autenticarProxy(page);
+      await this.otimizarRede(page);
 
-        await page.setUserAgent(
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        );
+      try {
+        await this.autenticarProxy(page);
 
-        await page.setRequestInterception(true);
-        page.on('request', (req: any) => {
-          if (['font', 'media'].includes(req.resourceType())) req.abort();
-          else req.continue();
-        });
+        await page.setUserAgent(
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        );
 
-        console.log(`🔍 [PJe ${chave}] Acessando: ${url}`);
-        await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 });
+        await page.setRequestInterception(true);
+        page.on('request', (req: any) => {
+          if (['font', 'media'].includes(req.resourceType())) req.abort();
+          else req.continue();
+        });
 
-        escutarChamadasGeeTest(page);
+        console.log(`🔍 [PJe ${chave}] Acessando: ${url}`);
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 });
 
-        await this.preencherBuscaPJe(page, numeroCNJ, chave);
+        escutarChamadasGeeTest(page);
 
-        const btnPesquisar = await page.$(
-          'input[id*="fPP:searchProcessos"], input[id*="botaoPesquisar"], ' +
-          'input[type="submit"][value*="esquisar"], button[id*="pesquisar"]',
-        );
-        if (!btnPesquisar) {
-          const caminho = await salvarHtmlDebug(page, chave);
-          throw new Error(`Botão de pesquisa não encontrado. HTML salvo em: ${caminho}`);
-        }
+        await this.preencherBuscaPJe(page, numeroCNJ, chave);
 
-        await page.evaluate(() => {
-          const w = window as any;
-          w._callbackRoubado = null;
+        const btnPesquisar = await page.$(
+          'input[id*="fPP:searchProcessos"], input[id*="botaoPesquisar"], ' +
+          'input[type="submit"][value*="esquisar"], button[id*="pesquisar"]',
+        );
+        if (!btnPesquisar) {
+          const caminho = await salvarHtmlDebug(page, chave);
+          throw new Error(`Botão de pesquisa não encontrado. HTML salvo em: ${caminho}`);
+        }
 
-          if (w.TencentCaptcha) {
-            const Original = w.TencentCaptcha;
-            w.TencentCaptcha = function (appId: any, callback: any, opts: any) {
-              w._callbackRoubado = callback;
-              return new Original(appId, callback, opts);
-            };
-          }
-        });
-        
-        try {
-          const meuIpNoPuppeteer = await page.evaluate(async () => {
-            const res = await fetch('https://api.ipify.org');
-            return await res.text();
-          });
-          console.log(`🌍 [Proxy Check] O IP real da aba do Puppeteer é: ${meuIpNoPuppeteer}`);
-        } catch {
-          console.log(`🌍 [Proxy Check] Falha ao checar IP (Timeout ou bloqueio).`);
-        }
+        await page.evaluate(() => {
+          const w = window as any;
+          w._callbackRoubado = null;
 
-        console.log(`🖱️  [PJe ${chave}] Clicando em Pesquisar...`);
-        await btnPesquisar.click();
+          if (w.TencentCaptcha) {
+            const Original = w.TencentCaptcha;
+            w.TencentCaptcha = function (appId: any, callback: any, opts: any) {
+              w._callbackRoubado = callback;
+              return new Original(appId, callback, opts);
+            };
+          }
+        });
 
-        const captchaOk = await resolverCaptchaAutomatico(page, chave);
+        try {
+          const meuIpNoPuppeteer = await page.evaluate(async () => {
+            const res = await fetch('https://api.ipify.org');
+            return await res.text();
+          });
+          console.log(`🌍 [Proxy Check] O IP real da aba do Puppeteer é: ${meuIpNoPuppeteer}`);
+        } catch {
+          console.log(`🌍 [Proxy Check] Falha ao checar IP (Timeout ou bloqueio).`);
+        }
 
-        if (!captchaOk) {
-          throw new Error('Captcha não resolvido ou rejeitado (Expirou).');
-        }
+        console.log(`🖱️  [PJe ${chave}] Clicando em Pesquisar...`);
+        await btnPesquisar.click();
 
-        await page.waitForSelector(
-          'table[id*="processoList"], .rich-table, .rich-datascrl-cnt, td[id*="listagem"], div[id*="mensagens"]',
-          { timeout: 45000, visible: true }
-        ).catch(() => console.warn(`⚠️ [PJe ${chave}] Timeout aguardando os elementos da tabela.`));
+        const captchaOk = await resolverCaptchaAutomatico(page, chave);
 
-        console.log(`⏳ [PJe ${chave}] Tabela detectada! Aguardando estabilização dos dados...`);
-        await new Promise(r => setTimeout(r, 5000));
+        if (!captchaOk) {
+          throw new Error('Captcha não resolvido ou rejeitado (Expirou).');
+        }
 
-        const textoPagina = await page.content();
+        await page.waitForSelector(
+          'table[id*="processoList"], .rich-table, .rich-datascrl-cnt, td[id*="listagem"], div[id*="mensagens"]',
+          { timeout: 45000, visible: true }
+        ).catch(() => console.warn(`⚠️ [PJe ${chave}] Timeout aguardando os elementos da tabela.`));
 
-        if (textoPagina.includes('Ocorreu um erro inesperado') || textoPagina.includes('erro interno')) {
-          throw new Error('O servidor do Tribunal retornou um erro interno ao buscar o processo.');
-        }
+        console.log(`⏳ [PJe ${chave}] Tabela detectada! Aguardando estabilização dos dados...`);
+        await new Promise(r => setTimeout(r, 5000));
 
-        if (
-          textoPagina.includes('Nenhum resultado encontrado') ||
-          textoPagina.includes('nenhum processo encontrado') ||
-          textoPagina.includes('nenhum processo disponível') 
-        ) {
-          console.log(`ℹ️ [PJe ${chave}] Processo ${numeroCNJ} não pertence ao PJe (Mensagem vermelha detectada).`);
-          return null;
-        }
+        const textoPagina = await page.content();
 
-        console.log(`🔗 [PJe ${chave}] Localizando link com openPopUp para o processo ${numeroCNJ}...`);
-        const paginasAntes = await browser.pages();
+        if (textoPagina.includes('Ocorreu um erro inesperado') || textoPagina.includes('erro interno')) {
+          throw new Error('O servidor do Tribunal retornou um erro interno ao buscar o processo.');
+        }
 
-        const clicouComSucesso = await page.evaluate((numeroOriginal: string) => {
-          const numLimpo = numeroOriginal.replace(/[^\d]/g, '');
-          const links = Array.from(document.querySelectorAll('a[onclick*="openPopUp"]'));
+        if (
+          textoPagina.includes('Nenhum resultado encontrado') ||
+          textoPagina.includes('nenhum processo encontrado') ||
+          textoPagina.includes('nenhum processo disponível')
+        ) {
+          console.log(`ℹ️ [PJe ${chave}] Processo ${numeroCNJ} não pertence ao PJe (Mensagem vermelha detectada).`);
+          return null;
+        }
 
-          let alvo: HTMLElement | null | undefined = links.find(a => {
-            const texto = (a.textContent || '').replace(/[^\d]/g, '');
-            return texto.includes(numLimpo) && numLimpo.length > 10;
-          }) as HTMLElement | undefined;
+        console.log(`🔗 [PJe ${chave}] Localizando link com openPopUp para o processo ${numeroCNJ}...`);
+        const paginasAntes = await browser.pages();
 
-          if (!alvo) {
-            alvo = links.find(a => a.getAttribute('title')?.toLowerCase().includes('detalhe')) as HTMLElement | undefined;
-          }
+        const clicouComSucesso = await page.evaluate((numeroOriginal: string) => {
+          const numLimpo = numeroOriginal.replace(/[^\d]/g, '');
+          const links = Array.from(document.querySelectorAll('a[onclick*="openPopUp"]'));
 
-          if (alvo) {
-            alvo.click();
-            return true;
-          }
-          return false;
-        }, numeroCNJ);
+          let alvo: HTMLElement | null | undefined = links.find(a => {
+            const texto = (a.textContent || '').replace(/[^\d]/g, '');
+            return texto.includes(numLimpo) && numLimpo.length > 10;
+          }) as HTMLElement | undefined;
 
-        if (clicouComSucesso) {
-          console.log(`🚀 [PJe ${chave}] Clique disparado. Aguardando a aba do Pop-up abrir...`);
+          if (!alvo) {
+            alvo = links.find(a => a.getAttribute('title')?.toLowerCase().includes('detalhe')) as HTMLElement | undefined;
+          }
 
-          let novaPagina: Page | null = null;
-          for (let i = 0; i < 20; i++) {
-            await new Promise(r => setTimeout(r, 1000));
-            const paginasDepois = await browser.pages();
-            if (paginasDepois.length > paginasAntes.length) {
-              novaPagina = paginasDepois[paginasDepois.length - 1];
-              break;
-            }
-          }
+          if (alvo) {
+            alvo.click();
+            return true;
+          }
+          return false;
+        }, numeroCNJ);
 
-          if (!novaPagina) {
-            throw new Error('O Pop-up de detalhes não abriu a tempo.');
-          }
+        if (clicouComSucesso) {
+          console.log(`🚀 [PJe ${chave}] Clique disparado. Aguardando a aba do Pop-up abrir...`);
 
-          console.log(`📑 [PJe ${chave}] Pop-up detectado! Aguardando o Tribunal carregar a tabela de movimentações...`);
+          let novaPagina: Page | null = null;
+          for (let i = 0; i < 20; i++) {
+            await new Promise(r => setTimeout(r, 1000));
+            const paginasDepois = await browser.pages();
+            if (paginasDepois.length > paginasAntes.length) {
+              novaPagina = paginasDepois[paginasDepois.length - 1];
+              break;
+            }
+          }
 
-          await new Promise(r => setTimeout(r, 5000));
+          if (!novaPagina) {
+            throw new Error('O Pop-up de detalhes não abriu a tempo.');
+          }
 
-          try {
-            await novaPagina.waitForSelector(
-              'table, .timeline-item, tbody, tr.rich-table-row',
-              { visible: true, timeout: 25000 }
-            );
-            await new Promise(r => setTimeout(r, 2000));
-          } catch (e) {
-            console.warn(`⚠️ [PJe] A tabela demorou muito para aparecer no pop-up. Tentando extrair mesmo assim...`);
-          }
+          console.log(`📑 [PJe ${chave}] Pop-up detectado! Aguardando o Tribunal carregar a tabela de movimentações...`);
 
-          console.log(`✅ [PJe ${chave}] Dados carregados no Pop-up! Iniciando extração...`);
-          const dados = await this.extrairDados(novaPagina, numeroCNJ, chave);
+          await new Promise(r => setTimeout(r, 5000));
 
-          console.log(`🎉 SUCESSO ABSOLUTO! Foram extraídas ${dados.movimentacoes.length} movimentações do PJe!`);
+          try {
+            await novaPagina.waitForSelector(
+              'table, .timeline-item, tbody, tr.rich-table-row',
+              { visible: true, timeout: 25000 }
+            );
+            await new Promise(r => setTimeout(r, 2000));
+          } catch (e) {
+            console.warn(`⚠️ [PJe] A tabela demorou muito para aparecer no pop-up. Tentando extrair mesmo assim...`);
+          }
 
-          if (dados.movimentacoes.length === 0) {
-            const caminhoPopup = await salvarHtmlDebug(novaPagina, `${chave}-popup-vazio`);
-            console.warn(`⚠️ [PJe] Pop-up abriu mas movimentações vieram vazias! HTML salvo em: ${caminhoPopup}`);
-          }
+          console.log(`✅ [PJe ${chave}] Dados carregados no Pop-up! Iniciando extração...`);
+          const dados = await this.extrairDados(novaPagina, numeroCNJ, chave);
 
-          await novaPagina.close().catch(() => { });
-          return dados;
-        } else {
-          console.warn(`⚠️ [PJe ${chave}] Link 'openPopUp' não encontrado. Extraindo da página principal.`);
-          const dadosFallback = await this.extrairDados(page, numeroCNJ, chave);
+          console.log(`🎉 SUCESSO ABSOLUTO! Foram extraídas ${dados.movimentacoes.length} movimentações do PJe!`);
 
-          if (dadosFallback.movimentacoes.length === 0) {
-            const caminhoPrincipal = await salvarHtmlDebug(page, `${chave}-principal-vazia`);
-            console.warn(`⚠️ [PJe] Extração da tela principal voltou vazia! HTML salvo em: ${caminhoPrincipal}`);
-          }
+          if (dados.movimentacoes.length === 0) {
+            const caminhoPopup = await salvarHtmlDebug(novaPagina, `${chave}-popup-vazio`);
+            console.warn(`⚠️ [PJe] Pop-up abriu mas movimentações vieram vazias! HTML salvo em: ${caminhoPopup}`);
+          }
 
-          return dadosFallback; 
-        }
+          await novaPagina.close().catch(() => { });
+          return dados;
+        } else {
+          console.warn(`⚠️ [PJe ${chave}] Link 'openPopUp' não encontrado. Extraindo da página principal.`);
+          const dadosFallback = await this.extrairDados(page, numeroCNJ, chave);
 
-      } catch (err: any) {
-        console.warn(`⚠️ [PJe ${chave}] Erro na tentativa ${tentativaProcesso}: ${err.message}`);
+          if (dadosFallback.movimentacoes.length === 0) {
+            const caminhoPrincipal = await salvarHtmlDebug(page, `${chave}-principal-vazia`);
+            console.warn(`⚠️ [PJe] Extração da tela principal voltou vazia! HTML salvo em: ${caminhoPrincipal}`);
+          }
 
-        if (tentativaProcesso === MAX_TENTATIVAS_PROCESSO) {
-          console.error(`❌ [PJe ${chave}] Esgotadas as tentativas para o processo ${numeroCNJ}.`);
-          return null;
-        }
-      } finally {
-        await page.close().catch(() => { });
-      }
-    }
+          return dadosFallback;
+        }
 
-    return null;
-  }
+      } catch (err: any) {
+        console.warn(`⚠️ [PJe ${chave}] Erro na tentativa ${tentativaProcesso}: ${err.message}`);
 
-  private async preencherBuscaPJe(page: Page, numeroCNJ: string, chave: string): Promise<void> {
-    const radiosEncontrados: any = await page.$$eval('input[type="radio"]', els =>
-      els.map(el => ({
-        id: el.id,
-        name: (el as HTMLInputElement).name,
-        value: (el as HTMLInputElement).value,
-        checked: (el as HTMLInputElement).checked,
-      })),
-    );
-    console.log(`🔎 [PJe ${chave}] Radios:`, JSON.stringify(radiosEncontrados));
+        if (tentativaProcesso === MAX_TENTATIVAS_PROCESSO) {
+          console.error(`❌ [PJe ${chave}] Esgotadas as tentativas para o processo ${numeroCNJ}.`);
+          return null;
+        }
+      } finally {
+        await page.close().catch(() => { });
+      }
+    }
 
-    const seletoresRadio = [
-      'input[id*="radioNumeroUnico"]',
-      'input[id*="numeracaoUnica"]',
-      'input[id*="numProcesso:tipo"][value="N"]',
-      'input[name*="tipoNumeracao"][value="UNICA"]',
-      'input[type="radio"][value="N"]',
-      'input[type="radio"][value="UNICO"]',
-      'input[type="radio"][value="NUMERACAO_UNICA"]',
-    ];
+    return null;
+  }
 
-    let radioClicado = false;
-    for (const sel of seletoresRadio) {
-      const radio = await page.$(sel);
-      if (radio) {
-        const marcado = await page.$eval(sel, el => (el as HTMLInputElement).checked);
-        if (!marcado) {
-          await radio.click();
-          await new Promise(r => setTimeout(r, 800));
-          console.log(`☑️  [PJe ${chave}] Radio clicado: ${sel}`);
-        } else {
-          console.log(`☑️  [PJe ${chave}] Radio já marcado: ${sel}`);
-        }
-        radioClicado = true;
-        break;
-      }
-    }
+  private async preencherBuscaPJe(page: Page, numeroCNJ: string, chave: string): Promise<void> {
+    const radiosEncontrados: any = await page.$$eval('input[type="radio"]', els =>
+      els.map(el => ({
+        id: el.id,
+        name: (el as HTMLInputElement).name,
+        value: (el as HTMLInputElement).value,
+        checked: (el as HTMLInputElement).checked,
+      })),
+    );
+    console.log(`🔎 [PJe ${chave}] Radios:`, JSON.stringify(radiosEncontrados));
 
-    if (!radioClicado && radiosEncontrados.length > 0) {
-      const primeiroId = radiosEncontrados[0].id;
-      if (primeiroId) {
-        await page.click(`#${CSS.escape(primeiroId)}`);
-        await new Promise(r => setTimeout(r, 800));
-        console.warn(`⚠️  [PJe ${chave}] Clicou no primeiro radio: #${primeiroId}`);
-        radioClicado = true;
-      }
-    }
+    const seletoresRadio = [
+      'input[id*="radioNumeroUnico"]',
+      'input[id*="numeracaoUnica"]',
+      'input[id*="numProcesso:tipo"][value="N"]',
+      'input[name*="tipoNumeracao"][value="UNICA"]',
+      'input[type="radio"][value="N"]',
+      'input[type="radio"][value="UNICO"]',
+      'input[type="radio"][value="NUMERACAO_UNICA"]',
+    ];
 
-    if (!radioClicado) {
-      console.warn(`⚠️  [PJe ${chave}] Nenhum radio encontrado — tentando preencher direto.`);
-    }
+    let radioClicado = false;
+    for (const sel of seletoresRadio) {
+      const radio = await page.$(sel);
+      if (radio) {
+        const marcado = await page.$eval(sel, el => (el as HTMLInputElement).checked);
+        if (!marcado) {
+          await radio.click();
+          await new Promise(r => setTimeout(r, 800));
+          console.log(`☑️  [PJe ${chave}] Radio clicado: ${sel}`);
+        } else {
+          console.log(`☑️  [PJe ${chave}] Radio já marcado: ${sel}`);
+        }
+        radioClicado = true;
+        break;
+      }
+    }
 
-    const inputsEncontrados = await page.$$eval('input[type="text"], input:not([type])', els =>
-      els.map(el => ({
-        id: el.id,
-        name: (el as HTMLInputElement).name,
-        placeholder: (el as HTMLInputElement).placeholder,
-        visible: (el as HTMLElement).offsetParent !== null,
-      })),
-    );
-    console.log(`🔎 [PJe ${chave}] Inputs:`, JSON.stringify(inputsEncontrados));
+    if (!radioClicado && radiosEncontrados.length > 0) {
+      const primeiroId = radiosEncontrados[0].id;
+      if (primeiroId) {
+        await page.click(`#${CSS.escape(primeiroId)}`);
+        await new Promise(r => setTimeout(r, 800));
+        console.warn(`⚠️  [PJe ${chave}] Clicou no primeiro radio: #${primeiroId}`);
+        radioClicado = true;
+      }
+    }
 
-    const seletoresInput = [
-      'input[id*="fPP:numProcesso:NumeroOrgaoJusticaDecoration:NumeroOrgaoJustica"]',
-      'input[id*="numProcesso:NumeroOrgaoJustica"]',
-      'input[id$=":numeroProcesso"]',
-      'input[name*="numeroProcesso"]',
-      'input[id*="processoNumeroCNJ"]',
-      'input[id*="numProcesso"]',
-    ];
+    if (!radioClicado) {
+      console.warn(`⚠️  [PJe ${chave}] Nenhum radio encontrado — tentando preencher direto.`);
+    }
 
-    let seletorEncontrado: string | null = null;
-    for (const seletor of seletoresInput) {
-      try {
-        await page.waitForSelector(seletor, { timeout: 3000 });
-        seletorEncontrado = seletor;
-        console.log(`🎯 [PJe ${chave}] Campo encontrado: ${seletor}`);
-        break;
-      } catch { /* tenta o próximo */ }
-    }
+    const inputsEncontrados = await page.$$eval('input[type="text"], input:not([type])', els =>
+      els.map(el => ({
+        id: el.id,
+        name: (el as HTMLInputElement).name,
+        placeholder: (el as HTMLInputElement).placeholder,
+        visible: (el as HTMLElement).offsetParent !== null,
+      })),
+    );
+    console.log(`🔎 [PJe ${chave}] Inputs:`, JSON.stringify(inputsEncontrados));
 
-    if (!seletorEncontrado) {
-      const caminho = await salvarHtmlDebug(page, chave);
-      throw new Error(`[PJe ${chave}] Campo não encontrado. HTML salvo em: ${caminho}`);
-    }
+    const seletoresInput = [
+      'input[id*="fPP:numProcesso:NumeroOrgaoJusticaDecoration:NumeroOrgaoJustica"]',
+      'input[id*="numProcesso:NumeroOrgaoJustica"]',
+      'input[id$=":numeroProcesso"]',
+      'input[name*="numeroProcesso"]',
+      'input[id*="processoNumeroCNJ"]',
+      'input[id*="numProcesso"]',
+    ];
 
-    await page.$eval(seletorEncontrado, el => { (el as HTMLInputElement).value = ''; });
-    await page.click(seletorEncontrado, { clickCount: 3 });
-    await page.keyboard.press('Backspace');
+    let seletorEncontrado: string | null = null;
+    for (const seletor of seletoresInput) {
+      try {
+        await page.waitForSelector(seletor, { timeout: 3000 });
+        seletorEncontrado = seletor;
+        console.log(`🎯 [PJe ${chave}] Campo encontrado: ${seletor}`);
+        break;
+      } catch { /* tenta o próximo */ }
+    }
 
-    const apenasDigitos = numeroCNJ.replace(/[^\d]/g, '');
-    await page.type(seletorEncontrado, apenasDigitos, { delay: 40 });
-    console.log(`✍️  [PJe ${chave}] Número preenchido: ${apenasDigitos}`);
-  }
+    if (!seletorEncontrado) {
+      const caminho = await salvarHtmlDebug(page, chave);
+      throw new Error(`[PJe ${chave}] Campo não encontrado. HTML salvo em: ${caminho}`);
+    }
 
-  private async extrairDados(page: Page, numeroCNJ: string, chave: string): Promise<PjeResultado> {
-    const dados = await page.evaluate(() => {
-      const movs: any[] = [];
-      let orgao = "Não informado";
+    await page.$eval(seletorEncontrado, el => { (el as HTMLInputElement).value = ''; });
+    await page.click(seletorEncontrado, { clickCount: 3 });
+    await page.keyboard.press('Backspace');
 
-      const spans = Array.from(document.querySelectorAll('span, div, td'));
-      const divOrgao = spans.find(el => el.textContent?.includes('Órgão Julgador'));
-      if (divOrgao && divOrgao.nextElementSibling) {
-         orgao = divOrgao.nextElementSibling.textContent?.trim() || "Não informado";
-      }
+    const apenasDigitos = numeroCNJ.replace(/[^\d]/g, '');
+    await page.type(seletorEncontrado, apenasDigitos, { delay: 40 });
+    console.log(`✍️  [PJe ${chave}] Número preenchido: ${apenasDigitos}`);
+  }
 
-      const tbodyMovimentacoes = document.querySelector('tbody[id$=":processoEvento:tb"]');
-      
-      if (tbodyMovimentacoes) {
-        const linhas = tbodyMovimentacoes.querySelectorAll('tr.rich-table-row');
-        
-        linhas.forEach(linha => {
-          const textoCompleto = linha.textContent?.trim().replace(/\s+/g, ' ') || '';
+  private async extrairDados(page: Page, numeroCNJ: string, chave: string): Promise<PjeResultado> {
+    const dados = await page.evaluate(() => {
+      const movs: any[] = [];
+      let orgao = "Não informado";
 
-          const regexData = /^(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2})\s*-\s*(.*)/;
-          const match : any = textoCompleto.match(regexData);
+      const spans = Array.from(document.querySelectorAll('span, div, td'));
+      const divOrgao = spans.find(el => el.textContent?.includes('Órgão Julgador'));
+      if (divOrgao && divOrgao.nextElementSibling) {
+        orgao = divOrgao.nextElementSibling.textContent?.trim() || "Não informado";
+      }
 
-          if (match) {
-            movs.push({
-              data: match[1].trim(), 
-              titulo: match[2].substring(0, 100), 
-              descricao: match[2].trim(),
-              codigo: 999999
-            });
-          }
-        });
-      }
+      const tbodyMovimentacoes = document.querySelector('tbody[id$=":processoEvento:tb"]');
 
-      return {
-        orgaoJulgador: orgao,
-        movimentacoes: movs
-      };
-    });
+      if (tbodyMovimentacoes) {
+        const linhas = tbodyMovimentacoes.querySelectorAll('tr.rich-table-row');
 
-    return {
-      numeroProcesso: numeroCNJ,
-      tribunal: obterTribunalPorCNJ(numeroCNJ),
-      fonte: 'PJe',
-      orgaoJulgador: dados.orgaoJulgador,
-      movimentacoes: dados.movimentacoes
-    };
-  }
+        linhas.forEach(linha => {
+          const textoCompleto = linha.textContent?.trim().replace(/\s+/g, ' ') || '';
+
+          const regexData = /^(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2})\s*-\s*(.*)/;
+          const match: any = textoCompleto.match(regexData);
+
+          if (match) {
+            movs.push({
+              data: match[1].trim(),
+              titulo: match[2].substring(0, 100),
+              descricao: match[2].trim(),
+              codigo: 999999
+            });
+          }
+        });
+      }
+
+      return {
+        orgaoJulgador: orgao,
+        movimentacoes: movs
+      };
+    });
+
+    return {
+      numeroProcesso: numeroCNJ,
+      tribunal: obterTribunalPorCNJ(numeroCNJ),
+      fonte: 'PJe',
+      orgaoJulgador: dados.orgaoJulgador,
+      movimentacoes: dados.movimentacoes
+    };
+  }
 }

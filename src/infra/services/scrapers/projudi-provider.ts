@@ -68,7 +68,7 @@ export class ProjudiProvider extends BaseScraper {
     const urlBusca = PROJUDI_URLS[chave];
     const browser = await this.getBrowser();
     const page = await browser.newPage();
-
+    await this.otimizarRede(page);
     await this.autenticarProxy(page).catch(() => { });
 
     try {
@@ -115,9 +115,9 @@ export class ProjudiProvider extends BaseScraper {
         }
       }
 
-      if (!achouInput) throw new Error(`Campo de número do processo (${seletorInput}) não localizado.`);      
-      
-     await new Promise(r => setTimeout(r, 1000));
+      if (!achouInput) throw new Error(`Campo de número do processo (${seletorInput}) não localizado.`);
+
+      await new Promise(r => setTimeout(r, 1000));
 
       console.log(`🖱️ [PROJUDI ${chave}] Clicando no botão "Buscar"...`);
       const btnSeletor = config.seletorBtnBusca;
