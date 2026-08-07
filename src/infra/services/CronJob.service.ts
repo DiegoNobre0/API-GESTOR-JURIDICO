@@ -1,294 +1,126 @@
-// import cron from 'node-cron';
-// import { generateText } from 'ai';
-// import { openai } from '@ai-sdk/openai';
-// import { prisma } from '../../lib/prisma.js';
-
-// // Importe seus serviços e providers
-// import { DatajudService } from './datajud.service.js';
-// import { MailService } from './mail-service.js';
-// import { PJeProvider } from './scrapers/pje.provider.js';
-
-// export class CronJobService {
-//   private datajud = new DatajudService();
-//   private mail = new MailService();
-//   private pje = new PJeProvider();
-
-//   constructor() {
-//     console.log('📌 [SISTEMA] CronJob carregado: Título Real + Explicação IA.');
-//   }
-
-//   iniciarAgendamento() {
-//     console.log('⏰ [CRON] Agendamento configurado para rodar todo dia às 04:00.');
-//     cron.schedule('0 4 * * *', async () => {
-//       await this.executarMonitoramento();
-//     });
-//   }
-
-//   async executarMonitoramento() {
-//     console.log('\n======================================================');
-//     console.log(`⏳ [SISTEMA] Iniciando monitoramento híbrido... ${new Date().toLocaleString('pt-BR')}`);
-
-//     try {
-//       console.log('🔍 [BANCO] Buscando usuários ativos e com notificarPje=true...');
-//       const usuarios = await prisma.user.findMany({
-//         where: { ativo: true, notificarPje: true },
-//         include: {
-//           processos: { where: { arquivado: false, numeroProcesso: { not: null } } }
-//         }
-//       });
-
-//       console.log(`👥 [USUÁRIOS] Encontrados ${usuarios.length} usuários para processar.`);
-
-//       for (const usuario of usuarios) {
-//         console.log(`\n👤 [USUÁRIO] Processando usuário ID: ${usuario.id} | Email: ${usuario.email}`);
-
-//         if (!usuario.email || usuario.processos.length === 0) {
-//           console.log(`⚠️ [PULO] Usuário ${usuario.id} ignorado (Sem e-mail ou sem processos).`);
-//           continue;
-//         }
-
-//         console.log(`📂 [PROCESSOS] Usuário ${usuario.id} tem ${usuario.processos.length} processo(s).`);
-
-//         let resumoEmail = '';
-//         let houveNovidade = false;
-
-//         for (const processo of usuario.processos) {
-//           if (!processo.numeroProcesso) continue;
-          
-//           console.log(`  📄 [PROCESSO] Verificando ID: ${processo.id} | Nº: ${processo.numeroProcesso}`);
-
-//           try {
-//             let movimentosEmBruto: any[] = [];
-//             let orgaoJulgador = 'Não informado';
-//             let tribunal: string | null = null;
-//             let fonteDados = '';
-
-//             // =================================================================
-//             // 🥇 TENTATIVA 1: PJe (Demais TJs, TRTs, TRFs) - Ignora e-SAJ (.8.26.)
-//             // =================================================================
-//             if (!processo.numeroProcesso.includes('.8.26.')) {
-//               console.log(`  🕷️ [PJe] Iniciando scraping público...`);
-//               const dadosPje = await this.pje.consultar(processo.numeroProcesso);
-
-//               if (dadosPje && dadosPje.movimentacoes.length > 0) {
-//                 console.log(`  🟢 [PJe] Sucesso! ${dadosPje.movimentacoes.length} movimentações.`);
-//                 fonteDados = `PJe (${dadosPje.tribunal})`;
-//                 orgaoJulgador = dadosPje.orgaoJulgador;
-//                 tribunal = dadosPje.tribunal;
-//                 movimentosEmBruto = dadosPje.movimentacoes.map(m => ({
-//                   nome: m.titulo,
-//                   dataHora: m.data,
-//                   codigo: m.codigo,
-//                 }));
-//               }
-//             }
-
-//             // =================================================================
-//             // 🥈 TENTATIVA 2: DATAJUD (Fallback ou processos do TJSP .8.26.)
-//             // =================================================================
-//             if (movimentosEmBruto.length === 0) {
-//               console.log(`  📡 [DATAJUD] Consultando API pública do CNJ...`);
-//               const dadosDatajud = await this.datajud.consultarMovimentacoes(processo.numeroProcesso);
-
-//               if (dadosDatajud?.movimentos?.length) {
-//                 console.log(`  🟢 [DATAJUD] Sucesso! Base nacional utilizada.`);
-//                 movimentosEmBruto = dadosDatajud.movimentos;
-//                 orgaoJulgador = dadosDatajud.orgaoJulgador?.nome || 'Não informado';
-//                 tribunal = dadosDatajud.tribunal ?? null;
-//                 fonteDados = 'Datajud CNJ';
-//               }
-//             }
-
-//             // Se ainda não achou nada, pula para o próximo processo
-//             if (movimentosEmBruto.length === 0) {
-//               console.log(`  ⚠️ [PULO] Nenhuma movimentação encontrada para ${processo.numeroProcesso}.`);
-//               continue;
-//             }
-
-//             // =================================================================
-//             // PROCESSAMENTO E SALVAMENTO
-//             // =================================================================
-//             console.log(`  📊 [PROCESSAMENTO] Ordenando ${movimentosEmBruto.length} movimentação(ões)...`);
-
-//             // Ordena da mais recente para a mais antiga garantindo que dataHora seja interpretada corretamente
-//             const movimentos = [...movimentosEmBruto].sort((a, b) => {
-//               const dateA = new Date(a.dataHora).getTime() || 0;
-//               const dateB = new Date(b.dataHora).getTime() || 0;
-//               return dateB - dateA;
-//             });
-
-//             const ultimoMovimento = movimentos[0];
-//             if (!ultimoMovimento || !ultimoMovimento.nome) continue;
-
-//             const dataUltimoMov = new Date(ultimoMovimento.dataHora);
-//             if (isNaN(dataUltimoMov.getTime())) {
-//                 console.warn(`  ⚠️ [AVISO] Data inválida detectada no movimento. Pulando...`);
-//                 continue;
-//             }
-
-//             console.log(`  🔍 [BANCO] Verificando se já existe no banco...`);
-//             const jaExiste = await prisma.andamento.findFirst({
-//               where: {
-//                 processoId: processo.id,
-//                 titulo: ultimoMovimento.nome,
-//                 dataMovimento: dataUltimoMov // Agora garantido como objeto Date válido
-//               }
-//             });
-
-//             if (jaExiste) {
-//               console.log(`  🛑 [PULO] Movimento já registrado. Sem novidades.`);
-//               continue;
-//             }
-
-//             console.log(`  ✅ [NOVIDADE] Movimento novo! (${fonteDados}) -> ${ultimoMovimento.nome}`);
-
-//             // --- PROMPT DA IA ---
-//             let explicacaoIA = "O processo seguiu para uma nova fase interna.";
-//             console.log(`  🤖 [IA] Solicitando explicação ao GPT...`);
-//             try {
-//               const { text } = await generateText({
-//                 model: openai('gpt-4o-mini'),
-//                 temperature: 0.1,
-//                 system: `Você é um advogado especialista em traduzir "juridiquês" para linguagem simples e acessível ao cliente final. Seja direto, claro e tranquilizador.`,
-//                 prompt: `Explique o que significa o andamento processual: "${ultimoMovimento.nome}" no contexto de um processo judicial. Limite a 3 frases.`
-//               });
-//               explicacaoIA = text.trim();
-//             } catch (iaError: any) {
-//               console.error(`  🔴 [IA - ERRO]: ${iaError.message}`);
-//             }
-
-//             // 💾 Salva no Banco de Dados
-//             await prisma.andamento.create({
-//               data: {
-//                 processoId: processo.id,
-//                 titulo: ultimoMovimento.nome,
-//                 descricao: explicacaoIA,
-//                 autorNome: `IA RCS (${fonteDados})`,
-//                 createdBy: usuario.id,
-//                 codigoMovimento: ultimoMovimento.codigo || 0,
-//                 dataMovimento: dataUltimoMov,
-//                 orgaoJulgador: orgaoJulgador,
-//                 tribunal: tribunal
-//               }
-//             });
-
-//             houveNovidade = true;
-//             resumoEmail += `
-//             <div style="margin-bottom:20px; border-left:4px solid #3498db; padding-left:15px; font-family: sans-serif;">
-//               <strong style="color: #2c3e50; font-size: 16px;">${processo.clienteNome || 'Processo'}</strong><br>
-//               <span style="color: #7f8c8d; font-size: 13px;">Processo nº: <strong>${processo.numeroProcesso}</strong></span><br>
-//               <div style="margin-top: 8px;">
-//                 <span style="font-weight: bold; color: #e67e22;">Movimentação: ${ultimoMovimento.nome}</span>
-//                 <span style="font-size: 10px; color: #95a5a6; margin-left: 8px;">[Fonte: ${fonteDados}]</span>
-//               </div>
-//               <p style="background:#f9f9f9; padding:12px; border-radius:4px; border: 1px solid #eee; margin-top:8px; line-height: 1.5;">
-//                 <i style="color: #7f8c8d; font-size: 12px;">O que isso significa?</i><br>
-//                 <span style="color: #34495e;">${explicacaoIA}</span>
-//               </p>
-//             </div>`;
-
-//             // Pequeno delay para aliviar o banco e não causar rate limit nas consultas e na IA
-//             await new Promise(r => setTimeout(r, 1000));
-
-//           } catch (err: any) {
-//             console.error(`  ❌ [ERRO NO PROCESSO ${processo.numeroProcesso}]: ${err.message}`);
-//           }
-//         } // Fim do loop de processos
-
-//         console.log(`\n📧 [EMAIL] Resumo para o usuário ${usuario.email}: Houve novidade? ${houveNovidade ? 'SIM' : 'NÃO'}`);
-//         if (houveNovidade && usuario.email) {
-//           console.log(`  🚀 [EMAIL] Tentando enviar e-mail para ${usuario.email}...`);
-//           try {
-//             await this.mail.sendEmail(
-//               usuario.email,
-//               `Atualização de Processo - ${new Date().toLocaleDateString('pt-BR')}`,
-//               `<h2>Olá ${usuario.nome || ''},</h2>
-//                <p>Identificamos novas movimentações oficiais nos seus processos:</p>
-//                ${resumoEmail}
-//                <p style="margin-top: 20px;">Confira os detalhes no seu painel da RCS Gestão Jurídica.</p>`
-//             );
-//             console.log(`  ✅ [EMAIL] E-mail enviado com sucesso!`);
-//           } catch (emailError: any) {
-//             console.error(`  ❌ [EMAIL - ERRO] Falha ao enviar e-mail: ${emailError.message}`);
-//           }
-//         }
-//       } // Fim do loop de usuários
-      
-//       console.log('🏁 [SISTEMA] Monitoramento finalizado com sucesso.');
-//       console.log('======================================================\n');
-//     } catch (err) {
-//       console.error('🔥 [ERRO CRÍTICO NO CRON]:', err);
-//     }
-//   }
-// }
-
-
 import cron from 'node-cron';
+import { ImapFlow } from 'imapflow';
+import { simpleParser } from 'mailparser';
 import { prisma } from '../../lib/prisma.js';
-import { MailService } from './mail-service.js';
-
-import { PJeProvider } from './scrapers/pje-provider.js';
-import { ProcessRunner } from './scrapers/runner.js';
+import { generateObject } from 'ai';
+import { openai } from '@ai-sdk/openai';
+import { z } from 'zod';
 
 export class CronJobService {
-  private mail = new MailService();
-  private runner = new ProcessRunner(); // Instância do seu Runner!
-
   constructor() {
-    console.log('📌 [SISTEMA] CronJob carregado: Delegação para o Runner ativa.');
+    console.log('📌 [SISTEMA] CronJob carregado: Leitor de E-mails IMAP do Astrea ativo.');
   }
 
   iniciarAgendamento() {
-    console.log('⏰ [CRON] Agendamento configurado para rodar todo dia às 04:00.');
-    cron.schedule('0 4 * * *', async () => {
-      await this.executarMonitoramento();
+    // Roda a cada 30 minutos (Ajuste conforme a necessidade)
+    cron.schedule('*/30 * * * *', async () => {
+      await this.processarEmailsDeAndamento();
     });
   }
 
-  async executarMonitoramento() {
-    console.log('\n======================================================');
-    console.log(`⏳ [SISTEMA] Iniciando monitoramento via Runner...`);
+async processarEmailsDeAndamento() {
+    console.log('⏳ [SISTEMA] Verificando novos e-mails do Astrea...');
+
+    // CORREÇÃO 1 (TS2322): Garantimos para o TS que essas variáveis são strings
+    const host = process.env.IMAP_HOST as string;
+    const user = process.env.IMAP_USER as string;
+    const pass = process.env.IMAP_PASS as string;
+
+    // Trava de segurança caso falte alguma variável no .env
+    if (!host || !user || !pass) {
+      console.error('🔥 [ERRO IMAP]: Configurações de e-mail ausentes no arquivo .env.');
+      return;
+    }
+
+    const client = new ImapFlow({
+      host,
+      port: 993,
+      secure: true,
+      auth: { user, pass },
+      logger: false 
+    });
 
     try {
-      const usuarios = await prisma.user.findMany({
-        where: { ativo: true, notificarPje: true },
-        include: {
-          processos: { where: { arquivado: false, numeroProcesso: { not: null } } }
-        }
-      });
+      await client.connect();
+      const lock = await client.getMailboxLock('INBOX');
+      
+      try {
+        const messages = client.fetch({ 
+          seen: false, 
+          from: 'astrea@aurum.com.br' 
+        }, { source: true, uid: true });
 
-      for (const usuario of usuarios) {
-        if (!usuario.email || usuario.processos.length === 0) continue;
+        for await (let msg of messages) {
+          // CORREÇÃO 2 (TS2345): Ignora a mensagem se o source vier vazio
+          if (!msg.source) {
+            continue;
+          }
 
-        console.log(`\n👤 [USUÁRIO] Delegando ${usuario.processos.length} processos do usuário ${usuario.id} ao Runner...`);
+          // CORREÇÃO 3 (TS2339 e TS2345): O "as Buffer" diz ao TypeScript 
+          // exatamente o formato do dado, fazendo o .text ser reconhecido.
+          const parsed = await simpleParser(msg.source as Buffer);
+          const corpoEmail = parsed.text || '';
 
-        // 🚀 Aqui a mágica acontece: O Runner assume o trabalho pesado
-        const resultado = await this.runner.processarLotesDoUsuario(usuario, usuario.processos);
-        console.log('RESULTADO:', JSON.stringify(resultado, null, 2));
-        if (resultado.houveNovidade && usuario.email) {
-          console.log(`  📧 [EMAIL] Novidades encontradas. Enviando para ${usuario.email}...`);
-          try {
-            await this.mail.sendEmail(
-              usuario.email,
-              `Atualização de Processo - ${new Date().toLocaleDateString('pt-BR')}`,
-              `<h2>Olá ${usuario.nome || ''},</h2>
-               <p>Identificamos novas movimentações oficiais nos seus processos:</p>
-               ${resultado.resumoEmail}
-               <p style="margin-top: 20px;">Confira os detalhes no seu painel.</p>`
-            );
-          } catch (err: any) {
-            console.error(`  ❌ [EMAIL - ERRO]: ${err.message}`);
+          const dadosExtraidos = await this.extrairDadosDoEmail(corpoEmail);
+
+          if (dadosExtraidos && dadosExtraidos.numeroProcesso && dadosExtraidos.andamentos.length > 0) {
+            const processo = await prisma.processo.findFirst({
+              where: { numeroProcesso: { contains: dadosExtraidos.numeroProcesso } }
+            });
+
+            if (processo) {
+              for (const andamento of dadosExtraidos.andamentos) {
+                await prisma.andamento.create({
+                  data: {
+                    processoId: processo.id,
+                    titulo: andamento.titulo,
+                    descricao: andamento.descricao,
+                    dataMovimento: new Date(`${andamento.dataMovimento}T12:00:00.000Z`), 
+                    createdBy: processo.userId, 
+                    autorNome: "Astrea (Via E-mail)"
+                  }
+                });
+              }
+
+              await client.messageFlagsAdd({ uid: msg.uid }, ['\\Seen'], { uid: true });
+              console.log(`✅ ${dadosExtraidos.andamentos.length} andamento(s) salvo(s) para o processo ${processo.numeroProcesso}`);
+            } else {
+              console.log(`⚠️ Processo ${dadosExtraidos.numeroProcesso} não encontrado na base de dados.`);
+            }
           }
         }
+      } finally {
+        lock.release();
       }
-      
-      console.log('🏁 [SISTEMA] Monitoramento finalizado.');
-      
-      // Garante que o Chromium feche no final de toda a madrugada
-      await PJeProvider.closeBrowser().catch(() => {});
-
     } catch (err) {
-      console.error('🔥 [ERRO CRÍTICO NO CRON]:', err);
+      console.error('🔥 [ERRO IMAP]:', err);
+    } finally {
+      await client.logout();
+    }
+  }
+
+  // A função com IA usando Vercel AI SDK
+  private async extrairDadosDoEmail(textoEmail: string) {
+    try {
+      const { object } = await generateObject({
+        model: openai('gpt-4o-mini'),
+        temperature: 0, // Máxima precisão
+        schema: z.object({
+          numeroProcesso: z.string().describe("Número completo do processo judicial, exatamente como está no e-mail (ex: 8000792-04.2024.8.05.0148)"),
+          andamentos: z.array(z.object({
+            dataMovimento: z.string().describe("Data do andamento extraída do e-mail, convertida rigorosamente para o formato AAAA-MM-DD"),
+            titulo: z.string().describe("Resumo curto do andamento para servir de título, extraído do início da frase (ex: 'Publicado Ato Ordinatório')"),
+            descricao: z.string().describe("O texto completo da movimentação ou intimação fornecido no e-mail")
+          })).describe("Lista de todos os andamentos listados no e-mail para o processo.")
+        }),
+        system: "Você é um assistente de extração de dados jurídicos. O usuário vai enviar o corpo de texto de um e-mail automatizado do sistema Astrea. Seu objetivo é identificar o número do processo (geralmente rotulado como 'Número:') e extrair cada um dos andamentos listados no bloco de atualizações, devolvendo-os formatados.",
+        prompt: `Analise o seguinte e-mail do Astrea e extraia os dados solicitados:\n\n${textoEmail}`
+      });
+
+      return object;
+    } catch (error) {
+      console.error("Erro na extração de dados com IA:", error);
+      return null;
     }
   }
 }

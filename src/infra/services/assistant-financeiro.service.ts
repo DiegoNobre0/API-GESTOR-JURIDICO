@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { FinanceiroService } from '../../modules/financeiro/financeiro.service.js';
 import { AgendaService } from '../../modules/agenda/agenda.service.js';
 import { openai } from '@ai-sdk/openai';
+import { prisma } from '../../lib/prisma.js';
 
 // 🧠 CACHE EM MEMÓRIA: Guarda as ações pendentes de confirmação
 const pendencias = new Map<string, any>();
@@ -10,7 +11,39 @@ const pendencias = new Map<string, any>();
 export class AdvogadoAssistantService {
     private financeiroService = new FinanceiroService();
     private agendaService = new AgendaService();
-   
+
+    private async resolverProcessoNoBanco(termo?: string, userId?: string) {
+        if (!termo || !userId) return null;
+
+        const termoLimpoNum = termo.replace(/\D/g, '');
+        const isNumeric = termoLimpoNum.length >= 6; // Pode ser CPF ou pedaço do CNJ
+
+        return await prisma.processo.findFirst({
+            where: {
+                userId,
+                arquivado: false,
+                OR: [
+                    // Se digitou número (CPF ou CNJ)
+                    ...(isNumeric ? [
+                        { numeroProcesso: { contains: termoLimpoNum } },
+                        { numeroCNJ: { contains: termoLimpoNum } },
+                        { clienteCpf: { contains: termoLimpoNum } },
+                        { numeroInterno: { contains: termo } }
+                    ] : []),
+                    // Busca por nome do cliente (case-insensitive se configurado no Postgres)
+                    { clienteNome: { contains: termo, mode: 'insensitive' } },
+                    { descricaoObjeto: { contains: termo, mode: 'insensitive' } }
+                ]
+            },
+            select: {
+                id: true,
+                clienteNome: true,
+                numeroProcesso: true,
+                numeroCNJ: true
+            }
+        });
+    }
+
 
     // 👇 Usado para Compromissos (DateTime)
     private formatarDataIso(dataString?: string | null): string {
@@ -113,8 +146,13 @@ export class AdvogadoAssistantService {
                         startDate: z.string().describe("FORMATO: AAAA-MM-DDTHH:mm:ss"),
                         endDate: z.string().optional(),
                         description: z.string().optional(),
+                        // Alinhado com o array do front-end Angular
                         tipo: z.enum(['reuniao', 'audiencia', 'prazo', 'outro']).default('reuniao'),
-                        location: z.string().optional()
+                        location: z.string().optional(),
+                        // 👇 NOVO CAMPO: Captura nome, CPF ou número do processo mencionado
+                        termoBuscaProcesso: z.string().optional().describe(
+                            "Nome do cliente, CPF ou número do processo mencionado pelo advogado para vincular o compromisso"
+                        )
                     }).optional(),
 
                     tarefa: z.object({
@@ -127,21 +165,25 @@ export class AdvogadoAssistantService {
                     respostaChat: z.string()
                 }),
                 prompt: `
-                    Você é o assistente virtual pessoal do advogado dono do sistema RCS Gestão Jurídica.
-                    O advogado enviou: "${mensagem}"
-                    
-                    Identifique a intenção:
-                    - Se for despesa/receita, 'CRIAR_FINANCEIRO'.
-                    - Se for marcar reunião/audiência, 'CRIAR_COMPROMISSO'.
-                    - Se for um lembrete, 'CRIAR_TAREFA'.
-                    - Se não for nada disso, 'BATER_PAPO'.
+    Você é o assistente virtual pessoal do advogado dono do sistema RCS Gestão Jurídica.
+    O advogado enviou: "${mensagem}"
+    
+    Identifique a intenção:
+    - Se for despesa/receita, 'CRIAR_FINANCEIRO'.
+    - Se for marcar reunião/audiência, 'CRIAR_COMPROMISSO'.
+    - Se for um lembrete, 'CRIAR_TAREFA'.
+    - Se não for nada disso, 'BATER_PAPO'.
 
-                    REGRAS PARA O FINANCEIRO:
-                    - Se ENTRADA: 'Honorários Iniciais', 'Honorários Êxito', 'Honorários Mensais', 'Consultoria', 'Outros Recebimentos'.
-                    - Se SAIDA: 'Custos Processuais', 'Despesas Administrativas', 'Aluguel', 'Salários', 'Marketing', 'Impostos'.
-                    
-                    A data de HOJE é ${dataHojeIso}. Calcule "amanhã", "semana que vem" com base nisso.
-                `,
+    REGRAS PARA O FINANCEIRO:
+    - Se ENTRADA: 'Honorários Iniciais', 'Honorários Êxito', 'Honorários Mensais', 'Consultoria', 'Outros Recebimentos'.
+    - Se SAIDA: 'Custos Processuais', 'Despesas Administrativas', 'Aluguel', 'Salários', 'Marketing', 'Impostos'.
+    
+    REGRAS PARA AGENDA (COMPROMISSO):
+    - Se o advogado mencionar o nome de um cliente (ex: "audiência com o João"), CPF ou número do processo, coloque EXATAMENTE esse termo no campo 'termoBuscaProcesso'. 
+    - Extraia apenas o nome/número limpo (ex: "João Silva" ou "1234567-89").
+
+    A data de HOJE é ${dataHojeIso}. Calcule "amanhã", "semana que vem" com base nisso.
+`,
             });
 
             // ==========================================================
@@ -157,11 +199,45 @@ export class AdvogadoAssistantService {
             }
 
             if (object.acao === 'CRIAR_COMPROMISSO' && object.compromisso) {
-                pendencias.set(userId, object);
+                // 👇 1. Tenta vincular o processo automaticamente
+                const processoEncontrado = await this.resolverProcessoNoBanco(
+                    object.compromisso.termoBuscaProcesso,
+                    userId
+                );
+
+                // Injeta o ID encontrado no objeto que vai para o Map de pendências
+                const compromissoParaSalvar = {
+                    ...object.compromisso,
+                    processoId: processoEncontrado?.id || null
+                };
+
+                pendencias.set(userId, {
+                    ...object,
+                    compromisso: compromissoParaSalvar
+                });
+
                 const dataObj = new Date(this.formatarDataIso(object.compromisso.startDate));
                 const dataFormatada = `${dataObj.toLocaleDateString('pt-BR')} às ${dataObj.getHours()}h${dataObj.getMinutes() === 0 ? '00' : dataObj.getMinutes()}`;
 
-                return `⏳ *Confirmação de Agenda:*\n\nTítulo: ${object.compromisso.titulo}\nInício: ${dataFormatada}\nTipo: ${object.compromisso.tipo}\n\n👉 Responda *SIM* para agendar ou *NÃO* para cancelar.`;
+                // 👇 2. Monta o card de confirmação exibindo o vínculo
+                let iconeTipo = '📅';
+                if (object.compromisso.tipo === 'audiencia') iconeTipo = '⚖️';
+                if (object.compromisso.tipo === 'prazo') iconeTipo = '⏳';
+
+                let msg = `⏳ *Confirmação de Agenda (${iconeTipo} ${object.compromisso.tipo.toUpperCase()}):*\n\n`;
+                msg += `*Título:* ${object.compromisso.titulo}\n`;
+                msg += `*Data/Hora:* ${dataFormatada}\n`;
+
+                if (processoEncontrado) {
+                    const procNum = processoEncontrado.numeroProcesso || processoEncontrado.numeroCNJ || 'Sem número';
+                    msg += `*Vinculado a:* ${processoEncontrado.clienteNome} (${procNum})\n`;
+                } else if (object.compromisso.termoBuscaProcesso) {
+                    msg += `⚠️ _Não encontrei processo para "${object.compromisso.termoBuscaProcesso}". Será agendado sem vínculo._\n`;
+                }
+
+                msg += `\n👉 Responda *SIM* para agendar ou *NÃO* para cancelar.`;
+
+                return msg;
             }
 
             if (object.acao === 'CRIAR_TAREFA' && object.tarefa) {
