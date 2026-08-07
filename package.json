@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "build": "tsup src/main.ts --format esm --clean --no-dts --external dotenv --external dotenv/config --external puppeteer --external @prisma/client",
+    "build": "tsup src/main.ts --format esm --platform node --clean --no-dts --external dotenv --external dotenv/config --external puppeteer --external @prisma/client --external ioredis",
     "start": "node dist/main.js",
     "prisma:generate": "prisma generate",
     "prisma:db-push": "prisma db push",
