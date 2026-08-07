@@ -37,7 +37,7 @@ export class FinanceiroService {
           mesesRecorrencia: data.meses_recorrencia,
           grupoRecorrenciaId: grupoId, // 👈 Salva a amarração
           processoId: safeProcessoId,
-          createdBy: userId 
+          user: { connect: { id: userId } }
         });
       }
 
