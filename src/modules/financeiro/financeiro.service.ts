@@ -33,7 +33,7 @@ export class FinanceiroService {
           valor: data.valor,
           data: dataParcela.toISOString(),
           descricao: `${data.descricao}${sufixoDescricao}`,
-          recorrente: data.recorrente,
+          recorrente: data.recorrente || false,
           mesesRecorrencia: data.meses_recorrencia,
           grupoRecorrenciaId: grupoId, // 👈 Salva a amarração
           processoId: safeProcessoId,
