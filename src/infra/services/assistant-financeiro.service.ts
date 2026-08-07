@@ -138,29 +138,27 @@ export class AdvogadoAssistantService {
                         valor: z.number(),
                         data: z.string().describe("FORMATO: AAAA-MM-DD"),
                         descricao: z.string(),
-                        recorrente: z.boolean().default(false),
-                    }).optional(),
+                        recorrente: z.boolean().nullable(),
+                    }).nullable(),
 
                     compromisso: z.object({
                         titulo: z.string(),
                         startDate: z.string().describe("FORMATO: AAAA-MM-DDTHH:mm:ss"),
-                        endDate: z.string().optional(),
-                        description: z.string().optional(),
-                        // Alinhado com o array do front-end Angular
-                        tipo: z.enum(['reuniao', 'audiencia', 'prazo', 'outro']).default('reuniao'),
-                        location: z.string().optional(),
-                        // 👇 NOVO CAMPO: Captura nome, CPF ou número do processo mencionado
-                        termoBuscaProcesso: z.string().optional().describe(
+                        endDate: z.string().nullable(),
+                        description: z.string().nullable(),
+                        tipo: z.enum(['reuniao', 'audiencia', 'prazo', 'outro']).nullable(),
+                        location: z.string().nullable(),
+                        termoBuscaProcesso: z.string().nullable().describe(
                             "Nome do cliente, CPF ou número do processo mencionado pelo advogado para vincular o compromisso"
                         )
-                    }).optional(),
+                    }).nullable(),
 
                     tarefa: z.object({
                         titulo: z.string(),
                         description: z.string(),
                         responsavel: z.string(),
                         prazo: z.string().describe("FORMATO: AAAA-MM-DD")
-                    }).optional(),
+                    }).nullable(),
 
                     respostaChat: z.string()
                 }),
@@ -199,16 +197,20 @@ export class AdvogadoAssistantService {
             }
 
             if (object.acao === 'CRIAR_COMPROMISSO' && object.compromisso) {
-                // 👇 1. Tenta vincular o processo automaticamente
+                // 👇 CORREÇÃO 1: Usa "|| undefined" para converter o null e agradar o TypeScript
                 const processoEncontrado = await this.resolverProcessoNoBanco(
-                    object.compromisso.termoBuscaProcesso,
+                    object.compromisso.termoBuscaProcesso || undefined,
                     userId
                 );
+
+                // Garante que o tipo tenha um padrão seguro para salvar no banco
+                const tipoSeguro = object.compromisso.tipo || 'reuniao';
 
                 // Injeta o ID encontrado no objeto que vai para o Map de pendências
                 const compromissoParaSalvar = {
                     ...object.compromisso,
-                    processoId: processoEncontrado?.id || null
+                    processoId: processoEncontrado?.id || null,
+                    tipo: tipoSeguro
                 };
 
                 pendencias.set(userId, {
@@ -219,12 +221,12 @@ export class AdvogadoAssistantService {
                 const dataObj = new Date(this.formatarDataIso(object.compromisso.startDate));
                 const dataFormatada = `${dataObj.toLocaleDateString('pt-BR')} às ${dataObj.getHours()}h${dataObj.getMinutes() === 0 ? '00' : dataObj.getMinutes()}`;
 
-                // 👇 2. Monta o card de confirmação exibindo o vínculo
+                // 👇 CORREÇÃO 2: Usa a variável tipoSeguro em vez de object.compromisso.tipo
                 let iconeTipo = '📅';
-                if (object.compromisso.tipo === 'audiencia') iconeTipo = '⚖️';
-                if (object.compromisso.tipo === 'prazo') iconeTipo = '⏳';
+                if (tipoSeguro === 'audiencia') iconeTipo = '⚖️';
+                if (tipoSeguro === 'prazo') iconeTipo = '⏳';
 
-                let msg = `⏳ *Confirmação de Agenda (${iconeTipo} ${object.compromisso.tipo.toUpperCase()}):*\n\n`;
+                let msg = `⏳ *Confirmação de Agenda (${iconeTipo} ${tipoSeguro.toUpperCase()}):*\n\n`;
                 msg += `*Título:* ${object.compromisso.titulo}\n`;
                 msg += `*Data/Hora:* ${dataFormatada}\n`;
 
