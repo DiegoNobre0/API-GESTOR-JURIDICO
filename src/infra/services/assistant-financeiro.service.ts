@@ -20,7 +20,7 @@ export class AdvogadoAssistantService {
 
         return await prisma.processo.findFirst({
             where: {
-                userId,
+                // 👇 Removi o 'userId: userId' para que ele ache processos do Leonardo ou de qualquer sócio do escritório
                 arquivado: false,
                 OR: [
                     // Se digitou número (CPF ou CNJ)
@@ -28,22 +28,29 @@ export class AdvogadoAssistantService {
                         { numeroProcesso: { contains: termoLimpoNum } },
                         { numeroCNJ: { contains: termoLimpoNum } },
                         { clienteCpf: { contains: termoLimpoNum } },
-                        { numeroInterno: { contains: termo } }
+                        { numeroInterno: { contains: termo } },
+                        // Busca o CPF também na tabela relacional Cliente
+                        { cliente: { cpf: { contains: termoLimpoNum } } }
                     ] : []),
-                    // Busca por nome do cliente (case-insensitive se configurado no Postgres)
+                    // Busca por nome do cliente ou descrição no processo
                     { clienteNome: { contains: termo, mode: 'insensitive' } },
-                    { descricaoObjeto: { contains: termo, mode: 'insensitive' } }
+                    { descricaoObjeto: { contains: termo, mode: 'insensitive' } },
+                    // 👇 O SEGREDO: Busca o nome também DENTRO da tabela do Cliente!
+                    { cliente: { nome: { contains: termo, mode: 'insensitive' } } }
                 ]
             },
             select: {
                 id: true,
                 clienteNome: true,
                 numeroProcesso: true,
-                numeroCNJ: true
+                numeroCNJ: true,
+                // Traz os dados da tabela Cliente para garantirmos o nome correto
+                cliente: {
+                    select: { nome: true }
+                }
             }
         });
     }
-
 
     // 👇 Usado para Compromissos (DateTime)
     private formatarDataIso(dataString?: string | null): string {
@@ -232,7 +239,11 @@ export class AdvogadoAssistantService {
 
                 if (processoEncontrado) {
                     const procNum = processoEncontrado.numeroProcesso || processoEncontrado.numeroCNJ || 'Sem número';
-                    msg += `*Vinculado a:* ${processoEncontrado.clienteNome} (${procNum})\n`;
+                    
+                    // 👇 Pega o nome do "cache" do processo, ou vai buscar na tabela Cliente oficial
+                    const nomeClienteFinal = processoEncontrado.clienteNome || processoEncontrado.cliente?.nome || 'Cliente';
+                    
+                    msg += `*Vinculado a:* ${nomeClienteFinal} (${procNum})\n`;
                 } else if (object.compromisso.termoBuscaProcesso) {
                     msg += `⚠️ _Não encontrei processo para "${object.compromisso.termoBuscaProcesso}". Será agendado sem vínculo._\n`;
                 }
