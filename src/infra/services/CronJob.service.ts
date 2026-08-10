@@ -8,25 +8,24 @@ import { z } from 'zod';
 
 export class CronJobService {
   constructor() {
-    console.log('📌 [SISTEMA] CronJob carregado: Leitor de E-mails IMAP do Astrea ativo.');
+    console.log('📌 [SISTEMA] CronJob carregado: Leitor de E-mails IMAP ativo.');
   }
 
   iniciarAgendamento() {
-    // Roda a cada 30 minutos (Ajuste conforme a necessidade)
-    cron.schedule('*/30 * * * *', async () => {
+    // 👇 Mudei para rodar a CADA 1 MINUTO para facilitar os testes. 
+    // Depois que der certo, volte para '*/30 * * * *'
+    cron.schedule('* * * * *', async () => {
       await this.processarEmailsDeAndamento();
     });
   }
 
-async processarEmailsDeAndamento() {
-    console.log('⏳ [SISTEMA] Verificando novos e-mails do Astrea...');
+  async processarEmailsDeAndamento() {
+    console.log('⏳ [SISTEMA] Verificando novos e-mails...');
 
-    // CORREÇÃO 1 (TS2322): Garantimos para o TS que essas variáveis são strings
     const host = process.env.IMAP_HOST as string;
     const user = process.env.IMAP_USER as string;
     const pass = process.env.IMAP_PASS as string;
 
-    // Trava de segurança caso falte alguma variável no .env
     if (!host || !user || !pass) {
       console.error('🔥 [ERRO IMAP]: Configurações de e-mail ausentes no arquivo .env.');
       return;
@@ -37,7 +36,21 @@ async processarEmailsDeAndamento() {
       port: 993,
       secure: true,
       auth: { user, pass },
-      logger: false 
+      logger: false,
+      // 👇 PROTEÇÃO CONTRA TIMEOUT E QUEDAS DO GMAIL
+      clientInfo: { name: 'NobreGestao' },
+      connectionTimeout: 30000,
+      socketTimeout: 60000,
+      greetingTimeout: 30000
+    });
+
+    // 👇 ESCUDO ANTI-CRASH: Evita que erros de rede derrubem a API
+    client.on('error', (err) => {
+      console.error('⚠️ [IMAP] Erro silencioso de conexão (ignorado):', err.message);
+    });
+
+    client.on('close', () => {
+      console.log('⚠️ [IMAP] Conexão fechada pelo servidor. Tentará novamente no próximo ciclo.');
     });
 
     try {
@@ -47,17 +60,15 @@ async processarEmailsDeAndamento() {
       try {
         const messages = client.fetch({ 
           seen: false, 
-          from: 'astrea@aurum.com.br' 
+          // 👇 COMENTADO PARA O TESTE: Assim ele lê e-mails não lidos enviados por você também!
+          // from: 'astrea@aurum.com.br' 
         }, { source: true, uid: true });
 
         for await (let msg of messages) {
-          // CORREÇÃO 2 (TS2345): Ignora a mensagem se o source vier vazio
           if (!msg.source) {
             continue;
           }
 
-          // CORREÇÃO 3 (TS2339 e TS2345): O "as Buffer" diz ao TypeScript 
-          // exatamente o formato do dado, fazendo o .text ser reconhecido.
           const parsed = await simpleParser(msg.source as Buffer);
           const corpoEmail = parsed.text || '';
 
@@ -99,12 +110,11 @@ async processarEmailsDeAndamento() {
     }
   }
 
-  // A função com IA usando Vercel AI SDK
   private async extrairDadosDoEmail(textoEmail: string) {
     try {
       const { object } = await generateObject({
         model: openai('gpt-4o-mini'),
-        temperature: 0, // Máxima precisão
+        temperature: 0,
         schema: z.object({
           numeroProcesso: z.string().describe("Número completo do processo judicial, exatamente como está no e-mail (ex: 8000792-04.2024.8.05.0148)"),
           andamentos: z.array(z.object({
@@ -113,8 +123,8 @@ async processarEmailsDeAndamento() {
             descricao: z.string().describe("O texto completo da movimentação ou intimação fornecido no e-mail")
           })).describe("Lista de todos os andamentos listados no e-mail para o processo.")
         }),
-        system: "Você é um assistente de extração de dados jurídicos. O usuário vai enviar o corpo de texto de um e-mail automatizado do sistema Astrea. Seu objetivo é identificar o número do processo (geralmente rotulado como 'Número:') e extrair cada um dos andamentos listados no bloco de atualizações, devolvendo-os formatados.",
-        prompt: `Analise o seguinte e-mail do Astrea e extraia os dados solicitados:\n\n${textoEmail}`
+        system: "Você é um assistente de extração de dados jurídicos. O usuário vai enviar o corpo de texto de um e-mail. Seu objetivo é identificar o número do processo e extrair cada um dos andamentos listados no bloco de atualizações, devolvendo-os formatados.",
+        prompt: `Analise o seguinte e-mail e extraia os dados solicitados:\n\n${textoEmail}`
       });
 
       return object;
