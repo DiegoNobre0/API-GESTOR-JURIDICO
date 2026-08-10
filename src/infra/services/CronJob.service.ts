@@ -14,7 +14,7 @@ export class CronJobService {
   iniciarAgendamento() {
     // 👇 Mudei para rodar a CADA 1 MINUTO para facilitar os testes. 
     // Depois que der certo, volte para '*/30 * * * *'
-    cron.schedule('* * * * *', async () => {
+    cron.schedule('*/30 * * * *', async () => {
       await this.processarEmailsDeAndamento();
     });
   }
