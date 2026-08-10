@@ -58,10 +58,14 @@ export class CronJobService {
       const lock = await client.getMailboxLock('INBOX');
       
       try {
+        // 👇 1. Define a busca apenas para os últimos 3 dias
+        const dataLimite = new Date();
+        dataLimite.setDate(dataLimite.getDate() - 3);
+
+        // 👇 2. Busca TODOS os e-mails (lidos e não lidos) a partir dessa data
         const messages = client.fetch({ 
-          seen: false, 
-          // 👇 COMENTADO PARA O TESTE: Assim ele lê e-mails não lidos enviados por você também!
-          // from: 'astrea@aurum.com.br' 
+          since: dataLimite, 
+          // from: 'astrea@aurum.com.br' // (Comentado para o nosso teste com seu e-mail)
         }, { source: true, uid: true });
 
         for await (let msg of messages) {
@@ -80,21 +84,41 @@ export class CronJobService {
             });
 
             if (processo) {
+              let salvosNestaLeitura = 0;
+
               for (const andamento of dadosExtraidos.andamentos) {
-                await prisma.andamento.create({
-                  data: {
+                // 👇 3. TRAVA DE DUPLICIDADE: Verifica se o andamento já está salvo
+                const andamentoJaExiste = await prisma.andamento.findFirst({
+                  where: {
                     processoId: processo.id,
                     titulo: andamento.titulo,
-                    descricao: andamento.descricao,
-                    dataMovimento: new Date(`${andamento.dataMovimento}T12:00:00.000Z`), 
-                    createdBy: processo.userId, 
-                    autorNome: "Astrea (Via E-mail)"
+                    descricao: andamento.descricao
                   }
                 });
+
+                // Só salva se for novidade
+                if (!andamentoJaExiste) {
+                  await prisma.andamento.create({
+                    data: {
+                      processoId: processo.id,
+                      titulo: andamento.titulo,
+                      descricao: andamento.descricao,
+                      dataMovimento: new Date(`${andamento.dataMovimento}T12:00:00.000Z`), 
+                      createdBy: processo.userId, 
+                      autorNome: "Astrea (Via E-mail)"
+                    }
+                  });
+                  salvosNestaLeitura++;
+                }
               }
 
-              await client.messageFlagsAdd({ uid: msg.uid }, ['\\Seen'], { uid: true });
-              console.log(`✅ ${dadosExtraidos.andamentos.length} andamento(s) salvo(s) para o processo ${processo.numeroProcesso}`);
+              if (salvosNestaLeitura > 0) {
+                console.log(`✅ ${salvosNestaLeitura} andamento(s) INÉDITO(s) salvo(s) para o processo ${processo.numeroProcesso}`);
+              }
+              
+              // Opcional: Removemos a obrigatoriedade de marcar como lido, 
+              // já que agora controlamos a duplicidade direto no banco!
+
             } else {
               console.log(`⚠️ Processo ${dadosExtraidos.numeroProcesso} não encontrado na base de dados.`);
             }
