@@ -12,8 +12,7 @@ export class CronJobService {
   }
 
   iniciarAgendamento() {
-    // 👇 Mudei para rodar a CADA 1 MINUTO para facilitar os testes. 
-    // Depois que der certo, volte para '*/30 * * * *'
+    // Rodando a cada 30 minutos para proteger os limites da OpenAI
     cron.schedule('*/30 * * * *', async () => {
       await this.processarEmailsDeAndamento();
     });
@@ -37,41 +36,31 @@ export class CronJobService {
       secure: true,
       auth: { user, pass },
       logger: false,
-      // 👇 PROTEÇÃO CONTRA TIMEOUT E QUEDAS DO GMAIL
       clientInfo: { name: 'NobreGestao' },
       connectionTimeout: 30000,
       socketTimeout: 60000,
       greetingTimeout: 30000
     });
 
-    // 👇 ESCUDO ANTI-CRASH: Evita que erros de rede derrubem a API
-    client.on('error', (err) => {
-      console.error('⚠️ [IMAP] Erro silencioso de conexão (ignorado):', err.message);
-    });
+    client.on('error', (err) => { /* Ignora erros silenciosos */ });
 
-    client.on('close', () => {
-      console.log('⚠️ [IMAP] Conexão fechada pelo servidor. Tentará novamente no próximo ciclo.');
-    });
+    let lock: any = null;
 
     try {
       await client.connect();
-      const lock = await client.getMailboxLock('INBOX');
+      lock = await client.getMailboxLock('INBOX');
       
       try {
-        // 👇 1. Define a busca apenas para os últimos 3 dias
         const dataLimite = new Date();
         dataLimite.setDate(dataLimite.getDate() - 3);
 
-        // 👇 2. Busca TODOS os e-mails (lidos e não lidos) a partir dessa data
         const messages = client.fetch({ 
           since: dataLimite, 
-          // from: 'astrea@aurum.com.br' // (Comentado para o nosso teste com seu e-mail)
+          // from: 'astrea@aurum.com.br' // Descomente para produção!
         }, { source: true, uid: true });
 
         for await (let msg of messages) {
-          if (!msg.source) {
-            continue;
-          }
+          if (!msg.source) continue;
 
           const parsed = await simpleParser(msg.source as Buffer);
           const corpoEmail = parsed.text || '';
@@ -79,58 +68,96 @@ export class CronJobService {
           const dadosExtraidos = await this.extrairDadosDoEmail(corpoEmail);
 
           if (dadosExtraidos && dadosExtraidos.numeroProcesso && dadosExtraidos.andamentos.length > 0) {
-            const processo = await prisma.processo.findFirst({
+            
+            let processo = await prisma.processo.findFirst({
               where: { numeroProcesso: { contains: dadosExtraidos.numeroProcesso } }
             });
 
-            if (processo) {
-              let salvosNestaLeitura = 0;
+            // ================================================================
+            // 🚀 NOVA LÓGICA: CRIAÇÃO AUTOMÁTICA DE PROCESSO ÓRFÃO
+            // ================================================================
+            if (!processo) {
+              console.log(`⚠️ Processo ${dadosExtraidos.numeroProcesso} não encontrado. Criando automaticamente...`);
+              
+              // 1. Pega um usuário (advogado) padrão do sistema para ser o dono
+              const adminUser = await prisma.user.findFirst({ where: { email: user } }) || await prisma.user.findFirst();
+              if (!adminUser) continue; // Trava de segurança
 
-              for (const andamento of dadosExtraidos.andamentos) {
-                // 👇 3. TRAVA DE DUPLICIDADE: Verifica se o andamento já está salvo
-                const andamentoJaExiste = await prisma.andamento.findFirst({
-                  where: {
-                    processoId: processo.id,
-                    titulo: andamento.titulo,
-                    descricao: andamento.descricao
+              // 2. Busca ou Cria o Cliente
+              const nomeDoCliente = dadosExtraidos.nomeCliente || "Cliente Astrea (Automático)";
+              let cliente = await prisma.cliente.findFirst({
+                where: { nome: { contains: nomeDoCliente, mode: 'insensitive' } }
+              });
+
+              if (!cliente) {
+                cliente = await prisma.cliente.create({
+                  data: {
+                    nome: nomeDoCliente,
+                    telefone: `ASTREA-${Math.floor(Math.random() * 1000000)}`, // Telefone fictício para satisfazer o DB
                   }
                 });
+              }
 
-                // Só salva se for novidade
-                if (!andamentoJaExiste) {
-                  await prisma.andamento.create({
-                    data: {
-                      processoId: processo.id,
-                      titulo: andamento.titulo,
-                      descricao: andamento.descricao,
-                      dataMovimento: new Date(`${andamento.dataMovimento}T12:00:00.000Z`), 
-                      createdBy: processo.userId, 
-                      autorNome: "Astrea (Via E-mail)"
-                    }
-                  });
-                  salvosNestaLeitura++;
+              // 3. Cria o processo no banco
+              processo = await prisma.processo.create({
+                data: {
+                  numeroProcesso: dadosExtraidos.numeroProcesso,
+                  numeroInterno: dadosExtraidos.numeroProcesso.replace(/\D/g, ''),
+                  descricaoObjeto: "Processo identificado via Leitor de E-mails",
+                  responsavel: adminUser.nome,
+                  tipoHonorarios: "A Definir",
+                  clienteId: cliente.id,
+                  clienteNome: cliente.nome,
+                  userId: adminUser.id,
+                  statusGeral: "Triagem Inicial"
                 }
-              }
-
-              if (salvosNestaLeitura > 0) {
-                console.log(`✅ ${salvosNestaLeitura} andamento(s) INÉDITO(s) salvo(s) para o processo ${processo.numeroProcesso}`);
-              }
+              });
               
-              // Opcional: Removemos a obrigatoriedade de marcar como lido, 
-              // já que agora controlamos a duplicidade direto no banco!
+              console.log(`✅ Processo criado com sucesso no nome de ${cliente.nome}!`);
+            }
+            // ================================================================
 
-            } else {
-              console.log(`⚠️ Processo ${dadosExtraidos.numeroProcesso} não encontrado na base de dados.`);
+            // Salva os andamentos no processo (seja ele antigo ou recém-criado)
+            let salvosNestaLeitura = 0;
+
+            for (const andamento of dadosExtraidos.andamentos) {
+              const andamentoJaExiste = await prisma.andamento.findFirst({
+                where: {
+                  processoId: processo.id,
+                  titulo: andamento.titulo,
+                  descricao: andamento.descricao
+                }
+              });
+
+              if (!andamentoJaExiste) {
+                await prisma.andamento.create({
+                  data: {
+                    processoId: processo.id,
+                    titulo: andamento.titulo,
+                    descricao: andamento.descricao,
+                    dataMovimento: new Date(`${andamento.dataMovimento}T12:00:00.000Z`), 
+                    createdBy: processo.userId, 
+                    autorNome: "Astrea (Via E-mail)"
+                  }
+                });
+                salvosNestaLeitura++;
+              }
+            }
+
+            if (salvosNestaLeitura > 0) {
+              console.log(`✅ ${salvosNestaLeitura} andamento(s) INÉDITO(s) salvo(s) para o processo ${processo.numeroProcesso}`);
             }
           }
         }
       } finally {
-        lock.release();
+        // Tenta liberar o lock sem crashar se a internet tiver caído
+        try { if (lock) lock.release(); } catch (e) { }
       }
-    } catch (err) {
-      console.error('🔥 [ERRO IMAP]:', err);
+    } catch (err: any) {
+      console.error('🔥 [ERRO IMAP]:', err.message);
     } finally {
-      await client.logout();
+      // Tenta fazer o logout de forma segura
+      try { await client.logout(); } catch (e) { }
     }
   }
 
@@ -140,15 +167,17 @@ export class CronJobService {
         model: openai('gpt-4o-mini'),
         temperature: 0,
         schema: z.object({
-          numeroProcesso: z.string().describe("Número completo do processo judicial, exatamente como está no e-mail (ex: 8000792-04.2024.8.05.0148)"),
+          numeroProcesso: z.string().describe("Número completo do processo judicial, exatamente como está no e-mail"),
+          // 👇 INSTRUÇÃO NOVA PARA A IA PEGAR O NOME DO CLIENTE
+          nomeCliente: z.string().describe("Nome do cliente dono do processo mencionado no e-mail (ex: João da Silva). Se não houver nome, retorne string vazia."),
           andamentos: z.array(z.object({
-            dataMovimento: z.string().describe("Data do andamento extraída do e-mail, convertida rigorosamente para o formato AAAA-MM-DD"),
-            titulo: z.string().describe("Resumo curto do andamento para servir de título, extraído do início da frase (ex: 'Publicado Ato Ordinatório')"),
-            descricao: z.string().describe("O texto completo da movimentação ou intimação fornecido no e-mail")
-          })).describe("Lista de todos os andamentos listados no e-mail para o processo.")
+            dataMovimento: z.string().describe("Data do andamento no formato AAAA-MM-DD"),
+            titulo: z.string().describe("Resumo curto do andamento para título"),
+            descricao: z.string().describe("O texto completo da movimentação ou intimação")
+          })).describe("Lista de andamentos do e-mail.")
         }),
-        system: "Você é um assistente de extração de dados jurídicos. O usuário vai enviar o corpo de texto de um e-mail. Seu objetivo é identificar o número do processo e extrair cada um dos andamentos listados no bloco de atualizações, devolvendo-os formatados.",
-        prompt: `Analise o seguinte e-mail e extraia os dados solicitados:\n\n${textoEmail}`
+        system: "Você é um assistente de extração de dados jurídicos. O usuário vai enviar um e-mail. Identifique o número do processo, o nome do cliente (se houver) e os andamentos.",
+        prompt: `Extraia os dados solicitados:\n\n${textoEmail}`
       });
 
       return object;
