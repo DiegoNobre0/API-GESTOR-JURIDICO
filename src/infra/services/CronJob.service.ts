@@ -12,7 +12,7 @@ export class CronJobService {
   }
 
   iniciarAgendamento() {
-    // Rodando a cada 30 minutos para proteger os limites da OpenAI
+    // Rodando a cada 30 minutos para proteger os limites da OpenAI e do Servidor
     cron.schedule('*/30 * * * *', async () => {
       await this.processarEmailsDeAndamento();
     });
@@ -54,9 +54,13 @@ export class CronJobService {
         const dataLimite = new Date();
         dataLimite.setDate(dataLimite.getDate() - 3);
 
+        // ================================================================
+        // 🚨 TRAVAS DE CUSTO ABSOLUTO (ANTI-FALÊNCIA DA OPENAI) 🚨
+        // ================================================================
         const messages = client.fetch({ 
           since: dataLimite, 
-          // from: 'astrea@aurum.com.br' // Descomente para produção!
+          flagged: false, // 👈 TRAVA 1: Só lê o que for novidade (Não lido)
+          from: 'astrea@aurum.com.br' // 👈 TRAVA 2: Só lê se for do sistema jurídico
         }, { source: true, uid: true });
 
         for await (let msg of messages) {
@@ -65,6 +69,7 @@ export class CronJobService {
           const parsed = await simpleParser(msg.source as Buffer);
           const corpoEmail = parsed.text || '';
 
+          // A IA só é acionada aqui para e-mails INÉDITOS
           const dadosExtraidos = await this.extrairDadosDoEmail(corpoEmail);
 
           if (dadosExtraidos && dadosExtraidos.numeroProcesso && dadosExtraidos.andamentos.length > 0) {
@@ -74,7 +79,7 @@ export class CronJobService {
             });
 
             // ================================================================
-            // 🚀 NOVA LÓGICA: CRIAÇÃO AUTOMÁTICA DE PROCESSO ÓRFÃO
+            // 🚀 CRIAÇÃO AUTOMÁTICA DE PROCESSO ÓRFÃO (COM CORREÇÃO DE CPF)
             // ================================================================
             if (!processo) {
               console.log(`⚠️ Processo ${dadosExtraidos.numeroProcesso} não encontrado. Criando automaticamente...`);
@@ -90,10 +95,14 @@ export class CronJobService {
               });
 
               if (!cliente) {
+                const identificadorUnico = Math.floor(Math.random() * 10000000);
+                
                 cliente = await prisma.cliente.create({
                   data: {
                     nome: nomeDoCliente,
-                    telefone: `ASTREA-${Math.floor(Math.random() * 1000000)}`, // Telefone fictício para satisfazer o DB
+                    // 👇 CORREÇÃO CRÍTICA DO BANCO DE DADOS: Gera CPF/Telefone únicos
+                    cpf: `ASTREA-CPF-${identificadorUnico}`, 
+                    telefone: `ASTREA-TEL-${identificadorUnico}`, 
                   }
                 });
               }
@@ -147,6 +156,9 @@ export class CronJobService {
             if (salvosNestaLeitura > 0) {
               console.log(`✅ ${salvosNestaLeitura} andamento(s) INÉDITO(s) salvo(s) para o processo ${processo.numeroProcesso}`);
             }
+
+            // 👇 TRAVA 3: Marca o e-mail como LIDO no Gmail para a IA NUNCA MAIS ler ele
+            await client.messageFlagsAdd({ uid: msg.uid }, ['\\Flagged', '\\Seen'], { uid: true });
           }
         }
       } finally {
@@ -168,7 +180,7 @@ export class CronJobService {
         temperature: 0,
         schema: z.object({
           numeroProcesso: z.string().describe("Número completo do processo judicial, exatamente como está no e-mail"),
-          // 👇 INSTRUÇÃO NOVA PARA A IA PEGAR O NOME DO CLIENTE
+          // 👇 INSTRUÇÃO PARA A IA PEGAR O NOME DO CLIENTE
           nomeCliente: z.string().describe("Nome do cliente dono do processo mencionado no e-mail (ex: João da Silva). Se não houver nome, retorne string vazia."),
           andamentos: z.array(z.object({
             dataMovimento: z.string().describe("Data do andamento no formato AAAA-MM-DD"),
