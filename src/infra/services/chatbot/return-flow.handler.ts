@@ -1,4 +1,3 @@
-
 import { prisma } from '@/lib/prisma.js';
 import { getSaudacaoAtual } from './utils.js';
 
@@ -27,9 +26,9 @@ Você quer acompanhar um processo ou iniciar um novo atendimento?`;
       return this.handleEscolha(texto, conversation);
     }
 
-    // ETAPA 3 – Recebe CPF/CNPJ para consulta
+    // ETAPA 3 – Recebe CPF/CNPJ ou NOME para consulta
     if (conversation.returnFlow === 'AGUARDANDO_CPF') {
-      return this.handleCPF(texto, conversation);
+      return this.handleDadosBusca(texto, conversation);
     }
 
     // ETAPA 4 – Cliente escolhe entre múltiplos processos
@@ -48,7 +47,7 @@ Você quer acompanhar um processo ou iniciar um novo atendimento?`;
         where: { customerPhone: conversation.customerPhone },
         data: { returnFlow: 'AGUARDANDO_CPF' },
       });
-      return `Perfeito 👍  \nPara localizar seus processos, me informe seu CPF.`;
+      return `Perfeito 👍  \nPara localizar seus processos, por favor, me informe o seu *CPF* (apenas números) ou o seu *Nome Completo*.`;
     }
 
     if (t.includes('novo') || t.includes('atendimento') || t.includes('abrir')) {
@@ -62,31 +61,53 @@ Você quer acompanhar um processo ou iniciar um novo atendimento?`;
     return `Você gostaria de acompanhar um processo ou iniciar um novo atendimento?`;
   }
 
-  private async handleCPF(texto: string, conversation: any): Promise<string> {
-    const documentoLimpo = texto.replace(/\D/g, '');
+  private async handleDadosBusca(texto: string, conversation: any): Promise<string> {
+    const textoLimpo = texto.trim();
+    const textoNumerico = texto.replace(/\D/g, '');
+    const isBuscaNumerica = textoNumerico.length >= 3;
 
-    if (documentoLimpo.length !== 11 && documentoLimpo.length !== 14) {
-      return 'Por favor, me informe um CPF (11 números) ou CNPJ (14 números) válido.';
+    // Evita buscas muito curtas que poderiam retornar a base inteira
+    if (textoLimpo.length < 3) {
+      return 'Por favor, informe um Nome completo ou CPF/CNPJ válido para realizarmos a busca.';
     }
 
-    const documentoFormatado =
-      documentoLimpo.length === 11
-        ? documentoLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
-        : documentoLimpo.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+    // Se for um CPF ou CNPJ completo, tentamos buscar também pela versão formatada (com pontos e traços)
+    let documentoFormatado = '';
+    if (textoNumerico.length === 11) {
+      documentoFormatado = textoNumerico.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    } else if (textoNumerico.length === 14) {
+      documentoFormatado = textoNumerico.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+    }
 
+    // 🚀 LÓGICA DE BUSCA TURBINADA: Procura por nome OU documento
     const processos = await prisma.processo.findMany({
       where: {
-        OR: [{ clienteCpf: documentoFormatado }, { clienteCpf: documentoLimpo }],
-        userId: conversation.userId,
+        userId: conversation.userId, // Garantia de segurança (só os do advogado logado)
         arquivado: false,
+        OR: [
+          // 1. Busca Numérica (Documentos)
+          ...(isBuscaNumerica ? [
+            { clienteCpf: { contains: textoNumerico } },
+            { cliente: { cpf: { contains: textoNumerico } } },
+            ...(documentoFormatado ? [
+              { clienteCpf: { contains: documentoFormatado } },
+              { cliente: { cpf: { contains: documentoFormatado } } }
+            ] : [])
+          ] : []),
+          
+          // 2. Busca por Texto (Nomes)
+          { clienteNome: { contains: textoLimpo, mode: 'insensitive' } },
+          { cliente: { nome: { contains: textoLimpo, mode: 'insensitive' } } }
+        ]
       },
       include: { andamentos: { orderBy: { createdAt: 'desc' }, take: 3 } },
     });
 
     if (!processos.length) {
-      return 'Não encontrei processos vinculados a esse documento.';
+      return 'Não encontrei processos vinculados a esse Nome ou Documento. Tente verificar a digitação ou informe outra forma de busca.';
     }
 
+    // Se achou exatamente 1 processo
     if (processos.length === 1) {
       await prisma.conversation.update({
         where: { customerPhone: conversation.customerPhone },
@@ -95,6 +116,7 @@ Você quer acompanhar um processo ou iniciar um novo atendimento?`;
       return this.formatarAndamentos(processos);
     }
 
+    // Se achou vários, pede para escolher
     await prisma.conversation.update({
       where: { customerPhone: conversation.customerPhone },
       data: {
@@ -143,7 +165,7 @@ Você quer acompanhar um processo ou iniciar um novo atendimento?`;
     processos.forEach((p, i) => {
       msg += `${i + 1}️⃣ Processo ${p.numeroProcesso ?? p.numeroInterno}\n`;
     });
-    msg += `\nPode me dizer o número.`;
+    msg += `\nPode me dizer o número correspondente (ex: 1).`;
     return msg;
   }
 

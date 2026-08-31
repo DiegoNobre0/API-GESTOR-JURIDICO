@@ -137,12 +137,12 @@ export class ChatbotService {
       return this.returnFlowHandler.handle(texto, conversation);
     }
 
-    if (await this.detectarConsultaProcesso(texto) && conversation.workflowStep !== 'FINALIZADO') {
+   if (await this.detectarConsultaProcesso(texto) && conversation.workflowStep !== 'FINALIZADO') {
       await prisma.conversation.update({
         where: { customerPhone },
-        data: { returnFlow: 'AGUARDANDO_CPF' },
+        data: { returnFlow: 'AGUARDANDO_CPF' }, // Mantemos o nome da tag interna igual para não quebrar o fluxo
       });
-      return `Olá! 🏢 Para localizar o andamento dos seus processos, por favor, me informe o seu *CPF* (apenas números).`;
+      return `Olá! 🏢 Para localizar o andamento dos seus processos, por favor, me informe o seu *CPF* (apenas números) ou o seu *Nome Completo*.`;
     }
 
     if (conversation.workflowStep === 'FINALIZADO') {
